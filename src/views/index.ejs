@@ -3,6 +3,11 @@
 <link rel="stylesheet" type="text/css" href="css/styles.css" />
 <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
     integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" crossorigin="anonymous" />
+<link rel="icon" href="img/favicon.ico" type="image/x-icon">
+
+<script src="/map/index.js"></script>
+
+<script defer src="https://maps.googleapis.com/maps/api/js?key=AIzaSyDxBCjsCYETbeqZEhz2EkvrVEQGEr_fWHE&loading=async&libraries=maps,places&callback=initMap"></script>
 
 <head>
     <meta charset="utf-8">
@@ -13,6 +18,8 @@
     <%- include('partials/header') %>
         <div class="container">
             <h1>Accessibility App</h1>
+            <input id="pac-input" class="controls pac-container pac-item pac-item:hover pac-item-selected pac-item-query pac-matched" type="text" placeholder="Search Box" />
+            <div id="map"></div>
             <p class="lead">Lorem ipsum dolor sit amet, consectetuer adipiscing elit. Aenean commodo ligula eget dolor.
                 Aenean massa. Cum
                 sociis natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Donec quam felis,

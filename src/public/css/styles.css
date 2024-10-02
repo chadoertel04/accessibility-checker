@@ -11,3 +11,16 @@
     right: 0px;
     margin-bottom: 0px;
 }
+
+/* Google API elements */
+
+#map {
+    height: 400px;
+    width: 100%;
+}
+
+#pac-input {
+    width: 75%;
+    margin: 10px;
+    height: 40px;
+}

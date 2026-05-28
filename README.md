@@ -1,4 +1,4 @@
-# ACESSIBILITY APP
+# ACCESSIBILITY APP
 
 Web application for providing detailed information on accessibility options at
 different locations using the Google Maps API.
@@ -14,10 +14,10 @@ Author: Chad Oertel
 - `npm install`
 - `npm run dev`
 
-## Environment vairables
+## Environment variables
 
 ```
-cp .env.template .env
+cp .env.example .env
 ```
 - `VITE_GOOGLE_API_KEY`: Google developer console api key.
 

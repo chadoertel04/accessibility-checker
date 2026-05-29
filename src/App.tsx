@@ -13,8 +13,14 @@ export default function App() {
       <ErrorBoundary>
         <Suspense
           fallback={
-            <div className="flex items-center justify-center min-h-screen">
-              <p className="text-gray-500 dark:text-gray-400">Loading…</p>
+            <div className="flex flex-col items-center justify-center min-h-screen gap-3 bg-slate-50 dark:bg-slate-950">
+              <div
+                aria-hidden="true"
+                className="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-700 border-t-indigo-600 dark:border-t-indigo-400 animate-spin"
+              />
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Loading…
+              </p>
             </div>
           }
         >

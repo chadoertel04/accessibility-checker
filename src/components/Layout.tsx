@@ -14,18 +14,18 @@ interface LayoutProps {
  */
 export default function Layout({ children, mainClassName = "" }: LayoutProps) {
   return (
-    <div className="flex flex-col min-h-screen">
+    <div className="flex flex-col min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* Skip-to-content: WCAG 2.4.1 — bypasses repetitive navigation for keyboard/AT users */}
       <a
         href="#main-content"
-        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-4 focus:left-4 px-4 py-2 bg-blue-600 text-white rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+        className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:top-4 focus:left-4 px-4 py-2 bg-indigo-600 text-white text-sm font-medium rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2 transition-all"
       >
         Skip to main content
       </a>
       <Header />
       <main
         id="main-content"
-        className={`flex-grow px-8 bg-white dark:bg-gray-700 ${mainClassName}`}
+        className={`flex-grow ${mainClassName}`}
       >
         {children}
       </main>

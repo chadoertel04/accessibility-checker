@@ -144,22 +144,46 @@ export default function GoogleMap() {
     return (
       <div
         role="alert"
-        className="flex items-center justify-center w-full h-[500px] bg-gray-100 dark:bg-gray-800 rounded-md"
+        className="flex flex-col items-center justify-center w-full h-[520px] bg-slate-50 dark:bg-slate-800 gap-3"
       >
-        <p className="text-gray-600 dark:text-gray-400">{error}</p>
+        <div className="flex items-center justify-center w-10 h-10 rounded-full bg-red-50 dark:bg-red-950 text-red-500 dark:text-red-400">
+          <svg
+            aria-hidden="true"
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1.5}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z"
+            />
+          </svg>
+        </div>
+        <p className="text-sm font-medium text-slate-700 dark:text-slate-300">
+          {error}
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="relative w-full h-[500px]">
+    <div className="relative w-full h-[520px]">
       {isLoading && (
         <div
           role="status"
           aria-label="Loading map"
-          className="absolute inset-0 flex items-center justify-center bg-gray-100 dark:bg-gray-800 rounded-md z-20"
+          className="absolute inset-0 flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-800 z-20 gap-3"
         >
-          <p className="text-gray-500 dark:text-gray-400">Loading map…</p>
+          <div
+            aria-hidden="true"
+            className="w-8 h-8 rounded-full border-2 border-slate-200 dark:border-slate-600 border-t-indigo-600 dark:border-t-indigo-400 animate-spin"
+          />
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Loading map…
+          </p>
         </div>
       )}
       {/* Label is visually hidden (sr-only) but keeps the input accessible to
@@ -172,8 +196,8 @@ export default function GoogleMap() {
         id="map-search"
         ref={inputRef}
         type="text"
-        placeholder="Search for places"
-        className="absolute top-4 left-4 z-10 p-2 m-2 w-64 bg-white dark:bg-gray-700 dark:text-gray-100 rounded-md shadow-sm border border-gray-300 dark:border-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        placeholder="Search for places…"
+        className="absolute top-4 left-4 z-10 m-2 w-72 px-4 py-2.5 text-sm bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 dark:placeholder:text-slate-500 rounded-xl shadow-md border border-slate-200 dark:border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-shadow duration-150"
       />
       <div
         ref={mapRef}

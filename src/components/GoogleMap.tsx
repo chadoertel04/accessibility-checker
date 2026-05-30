@@ -1,5 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Loader } from "@googlemaps/js-api-loader";
+import type { VenueData } from "@/types/places";
+
+export interface GoogleMapProps {
+  /** Callback when a venue is selected from search results */
+  onVenueSelect?: (venue: VenueData) => void;
+  /** Callback when venue loading state changes */
+  onLoadingChange?: (isLoading: boolean) => void;
+}
 
 // Defined outside the component so the array is not recreated on every render.
 const DARK_MODE_STYLES: google.maps.MapTypeStyle[] = [
@@ -87,11 +95,159 @@ const DARK_MODE_STYLES: google.maps.MapTypeStyle[] = [
 // every render would not make it reactive to system-theme changes anyway.
 const IS_DARK_MODE = window.matchMedia("(prefers-color-scheme: dark)").matches;
 
-export default function GoogleMap() {
+/** Extract VenueData from a Google PlaceResult */
+function extractVenueData(
+  place: google.maps.places.PlaceResult,
+): VenueData | null {
+  if (!place.place_id || !place.geometry?.location) return null;
+
+  const location = place.geometry.location;
+  console.log("[GoogleMap] Extracting venue data for:", place.name, place);
+
+  return {
+    placeId: place.place_id,
+    name: place.name ?? "Unknown Place",
+    address: place.formatted_address ?? place.vicinity,
+    rating: place.rating,
+    userRatingsTotal: place.user_ratings_total,
+    phoneNumber: place.formatted_phone_number ?? place.international_phone_number,
+    website: place.website,
+    openingHours: place.opening_hours
+      ? {
+          isOpen: place.opening_hours.isOpen?.bind(place.opening_hours),
+          weekdayDescriptions: place.opening_hours.weekday_text,
+        }
+      : undefined,
+    isOpen: place.opening_hours?.isOpen?.(),
+    photos: place.photos,
+    types: place.types,
+    primaryType: place.types?.[0],
+    // Google Places API returns accessibility options in the `accessibilityOptions` field
+    // for the Places API (new) or we need to check for specific fields
+    accessibilityOptions: (place as google.maps.places.PlaceResult & {
+      accessibilityOptions?: VenueData["accessibilityOptions"];
+      wheelchair_accessible_entrance?: boolean;
+    }).accessibilityOptions ?? {
+      wheelchairAccessibleEntrance: (place as google.maps.places.PlaceResult & {
+        wheelchair_accessible_entrance?: boolean;
+      }).wheelchair_accessible_entrance,
+    },
+    priceLevel: place.price_level,
+    location: {
+      lat: location.lat(),
+      lng: location.lng(),
+    },
+    reviews: place.reviews?.map((r) => ({
+      authorName: r.author_name,
+      rating: r.rating,
+      text: r.text,
+      relativeTimeDescription: r.relative_time_description,
+    })),
+    businessStatus: place.business_status,
+  };
+}
+
+/** Fields to request from Places API for detailed venue info */
+const PLACE_DETAILS_FIELDS = [
+  "place_id",
+  "name",
+  "formatted_address",
+  "geometry",
+  "rating",
+  "user_ratings_total",
+  "formatted_phone_number",
+  "international_phone_number",
+  "website",
+  "opening_hours",
+  "photos",
+  "types",
+  "price_level",
+  "reviews",
+  "business_status",
+  // Accessibility fields - these may vary by API version
+  "wheelchair_accessible_entrance",
+];
+
+export default function GoogleMap({
+  onVenueSelect,
+  onLoadingChange,
+}: GoogleMapProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const mapRef = useRef<HTMLDivElement>(null);
+  const mapInstanceRef = useRef<google.maps.Map | null>(null);
+  const markersRef = useRef<google.maps.Marker[]>([]);
+  const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
+
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  /** Clear all markers from the map */
+  const clearMarkers = useCallback(() => {
+    markersRef.current.forEach((marker) => marker.setMap(null));
+    markersRef.current = [];
+  }, []);
+
+  /** Add a marker to the map */
+  const addMarker = useCallback(
+    (
+      place: google.maps.places.PlaceResult,
+      map: google.maps.Map,
+    ): google.maps.Marker | null => {
+      if (!place.geometry?.location) return null;
+
+      const marker = new google.maps.Marker({
+        map,
+        position: place.geometry.location,
+        title: place.name,
+        animation: google.maps.Animation.DROP,
+        icon: {
+          url: "data:image/svg+xml," + encodeURIComponent(`
+            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+              <path fill="${IS_DARK_MODE ? "#818cf8" : "#4f46e5"}" d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24c0-8.837-7.163-16-16-16z"/>
+              <circle fill="white" cx="16" cy="16" r="6"/>
+            </svg>
+          `),
+          scaledSize: new google.maps.Size(32, 40),
+          anchor: new google.maps.Point(16, 40),
+        },
+      });
+
+      markersRef.current.push(marker);
+      return marker;
+    },
+    [],
+  );
+
+  /** Fetch detailed place information and notify parent */
+  const fetchPlaceDetails = useCallback(
+    (placeId: string, map: google.maps.Map) => {
+      if (!placesServiceRef.current) {
+        placesServiceRef.current = new google.maps.places.PlacesService(map);
+      }
+
+      onLoadingChange?.(true);
+
+      placesServiceRef.current.getDetails(
+        {
+          placeId,
+          fields: PLACE_DETAILS_FIELDS,
+        },
+        (place, status) => {
+          onLoadingChange?.(false);
+
+          if (status === google.maps.places.PlacesServiceStatus.OK && place) {
+            const venueData = extractVenueData(place);
+            if (venueData) {
+              onVenueSelect?.(venueData);
+            }
+          } else {
+            console.warn("[GoogleMap] Failed to fetch place details:", status);
+          }
+        },
+      );
+    },
+    [onVenueSelect, onLoadingChange],
+  );
 
   useEffect(() => {
     if (!inputRef.current || !mapRef.current) return;
@@ -117,7 +273,12 @@ export default function GoogleMap() {
           center: { lat: 53.8008, lng: -1.5 },
           zoom: 10,
           styles: IS_DARK_MODE ? DARK_MODE_STYLES : [],
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: true,
         });
+
+        mapInstanceRef.current = map;
 
         const inputElement = inputRef.current as HTMLInputElement;
         const searchBox = new google.maps.places.SearchBox(inputElement);
@@ -130,6 +291,47 @@ export default function GoogleMap() {
           searchBox.setBounds(map.getBounds() as google.maps.LatLngBounds);
         });
 
+        // Handle place selection from search
+        searchBox.addListener("places_changed", () => {
+          const places = searchBox.getPlaces();
+          if (!places || places.length === 0) return;
+
+          // Clear existing markers
+          clearMarkers();
+
+          // Get bounds to fit all results
+          const bounds = new google.maps.LatLngBounds();
+
+          places.forEach((place) => {
+            if (!place.geometry?.location) return;
+
+            // Add marker for each place
+            const marker = addMarker(place, map);
+
+            if (marker && place.place_id) {
+              // Add click listener to fetch details
+              marker.addListener("click", () => {
+                fetchPlaceDetails(place.place_id!, map);
+              });
+            }
+
+            // Extend bounds
+            if (place.geometry.viewport) {
+              bounds.union(place.geometry.viewport);
+            } else {
+              bounds.extend(place.geometry.location);
+            }
+          });
+
+          // Fit map to bounds
+          map.fitBounds(bounds);
+
+          // If only one place, fetch its details automatically
+          if (places.length === 1 && places[0].place_id) {
+            fetchPlaceDetails(places[0].place_id, map);
+          }
+        });
+
         setIsLoading(false);
       })
       .catch(() => {
@@ -138,7 +340,12 @@ export default function GoogleMap() {
         );
         setIsLoading(false);
       });
-  }, []);
+
+    // Cleanup
+    return () => {
+      clearMarkers();
+    };
+  }, [clearMarkers, addMarker, fetchPlaceDetails]);
 
   if (error) {
     return (

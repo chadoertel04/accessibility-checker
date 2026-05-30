@@ -1,7 +1,25 @@
+import { useState, useCallback } from "react";
 import GoogleMap from "@/components/GoogleMap";
 import Layout from "@/components/Layout";
+import VenueDetailsPanel from "@/components/VenueDetailsPanel";
+import type { VenueData } from "@/types/places";
 
 export default function Home() {
+  const [selectedVenue, setSelectedVenue] = useState<VenueData | null>(null);
+  const [isLoadingVenue, setIsLoadingVenue] = useState(false);
+
+  const handleVenueSelect = useCallback((venue: VenueData) => {
+    setSelectedVenue(venue);
+  }, []);
+
+  const handleLoadingChange = useCallback((loading: boolean) => {
+    setIsLoadingVenue(loading);
+  }, []);
+
+  const handleClosePanel = useCallback(() => {
+    setSelectedVenue(null);
+  }, []);
+
   return (
     <Layout>
       {/* Hero */}
@@ -40,9 +58,19 @@ export default function Home() {
         className="mx-auto max-w-7xl w-full px-4 sm:px-6 lg:px-8 py-8"
       >
         <div className="rounded-2xl overflow-hidden shadow-lg ring-1 ring-slate-200 dark:ring-slate-700">
-          <GoogleMap />
+          <GoogleMap
+            onVenueSelect={handleVenueSelect}
+            onLoadingChange={handleLoadingChange}
+          />
         </div>
       </section>
+
+      {/* Venue Details Panel */}
+      <VenueDetailsPanel
+        venue={selectedVenue}
+        onClose={handleClosePanel}
+        isLoading={isLoadingVenue}
+      />
     </Layout>
   );
 }

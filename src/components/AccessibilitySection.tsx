@@ -1,8 +1,9 @@
-import type { AccessibilityOptions, AccessibilityFeature } from "@/types/places";
+import type { AccessibilityOptions, AccessibilityFeature, AccessibilityData } from "@/types/places";
 import AccessibilityFeatureCard from "@/components/AccessibilityFeatureCard";
 
 interface AccessibilitySectionProps {
   accessibilityOptions?: AccessibilityOptions;
+  accessibilityData?: AccessibilityData;
 }
 
 /** Feature definitions with labels and descriptions */
@@ -154,6 +155,7 @@ function ScoreRing({ score }: { score: number | null }) {
  */
 export default function AccessibilitySection({
   accessibilityOptions,
+  accessibilityData,
 }: AccessibilitySectionProps) {
   const features = getFeatures(accessibilityOptions);
   const summary = getAccessibilitySummary(features);
@@ -203,11 +205,22 @@ export default function AccessibilitySection({
         ))}
       </div>
 
-      {/* Disclaimer */}
+      {/* Disclaimer and attribution */}
       <p className="text-xs text-slate-400 dark:text-slate-500 italic">
-        Accessibility information is provided by Google Maps and may not be
-        complete or up-to-date. We recommend contacting the venue directly for
-        the most accurate information.
+        {accessibilityData?.attribution ? (
+          <>
+            {accessibilityData.attribution}.
+            {accessibilityData.description && (
+              <span className="block mt-1 not-italic text-slate-500 dark:text-slate-400">
+                Note: {accessibilityData.description}
+              </span>
+            )}
+          </>
+        ) : (
+          "Accessibility information may not be complete or up-to-date."
+        )}{" "}
+        We recommend contacting the venue directly for the most accurate
+        information.
       </p>
     </section>
   );

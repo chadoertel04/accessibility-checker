@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { Loader } from "@googlemaps/js-api-loader";
 import type { VenueData } from "@/types/places";
+import {
+  fetchWheelmapAccessibility,
+  mergeAccessibilityOptions,
+} from "@/services/wheelmap";
 
 export interface GoogleMapProps {
   /** Callback when a venue is selected from search results */
@@ -232,15 +236,52 @@ export default function GoogleMap({
           placeId,
           fields: PLACE_DETAILS_FIELDS,
         },
-        (place, status) => {
-          onLoadingChange?.(false);
-
+        async (place, status) => {
           if (status === google.maps.places.PlacesServiceStatus.OK && place) {
             const venueData = extractVenueData(place);
             if (venueData) {
+              // Fetch accessibility data from Wheelmap (free alternative source)
+              try {
+                const wheelmapResult = await fetchWheelmapAccessibility(
+                  venueData.location.lat,
+                  venueData.location.lng,
+                  venueData.name,
+                );
+                console.log("[GoogleMap] Wheelmap accessibility result:", wheelmapResult);
+
+                // Merge accessibility data from both sources
+                // Wheelmap data takes precedence since Google legacy API doesn't return it
+                const mergedAccessibility = mergeAccessibilityOptions(
+                  venueData.accessibilityOptions,
+                  wheelmapResult.accessibilityOptions,
+                );
+
+                venueData.accessibilityOptions = mergedAccessibility;
+                venueData.accessibilityData = {
+                  options: mergedAccessibility,
+                  source: wheelmapResult.found ? "wheelmap" : "unknown",
+                  attribution: wheelmapResult.attribution,
+                  description: wheelmapResult.wheelchairDescription,
+                };
+
+                console.log(
+                  "[GoogleMap] Merged accessibility data:",
+                  venueData.accessibilityData,
+                );
+              } catch (error) {
+                console.warn(
+                  "[GoogleMap] Failed to fetch Wheelmap accessibility data:",
+                  error,
+                );
+              }
+
+              onLoadingChange?.(false);
               onVenueSelect?.(venueData);
+            } else {
+              onLoadingChange?.(false);
             }
           } else {
+            onLoadingChange?.(false);
             console.warn("[GoogleMap] Failed to fetch place details:", status);
           }
         },

@@ -3,12 +3,26 @@
  * These types represent the subset of place data relevant to accessibility features.
  */
 
-/** Accessibility options available for a place from Google Places API */
+/** Accessibility options available for a place */
 export interface AccessibilityOptions {
   wheelchairAccessibleEntrance?: boolean | null;
   wheelchairAccessibleParking?: boolean | null;
   wheelchairAccessibleRestroom?: boolean | null;
   wheelchairAccessibleSeating?: boolean | null;
+}
+
+/** Source of accessibility data */
+export type AccessibilityDataSource = "google" | "wheelmap" | "manual" | "unknown";
+
+/** Accessibility data with source attribution */
+export interface AccessibilityData {
+  options: AccessibilityOptions;
+  /** Primary source of the accessibility data */
+  source: AccessibilityDataSource;
+  /** Attribution text (e.g., "Data from Wheelmap.org") */
+  attribution?: string;
+  /** Additional description from the data source */
+  description?: string;
 }
 
 /** Opening hours period for a single day */
@@ -64,8 +78,10 @@ export interface VenueData {
   types?: string[];
   /** Primary type display name */
   primaryType?: string;
-  /** Accessibility options */
+  /** Accessibility options (merged from all sources) */
   accessibilityOptions?: AccessibilityOptions;
+  /** Detailed accessibility data with source attribution */
+  accessibilityData?: AccessibilityData;
   /** Price level (0-4) */
   priceLevel?: number;
   /** Geographic coordinates */

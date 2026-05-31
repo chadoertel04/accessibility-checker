@@ -106,7 +106,6 @@ function extractVenueData(
   if (!place.place_id || !place.geometry?.location) return null;
 
   const location = place.geometry.location;
-  console.log("[GoogleMap] Extracting venue data for:", place.name, place);
 
   return {
     placeId: place.place_id,
@@ -247,7 +246,6 @@ export default function GoogleMap({
                   venueData.location.lng,
                   venueData.name,
                 );
-                console.log("[GoogleMap] Wheelmap accessibility result:", wheelmapResult);
 
                 // Merge accessibility data from both sources
                 // Wheelmap data takes precedence since Google legacy API doesn't return it
@@ -259,15 +257,11 @@ export default function GoogleMap({
                 venueData.accessibilityOptions = mergedAccessibility;
                 venueData.accessibilityData = {
                   options: mergedAccessibility,
+                  additionalOptions: wheelmapResult.additionalAccessibility,
                   source: wheelmapResult.found ? "wheelmap" : "unknown",
                   attribution: wheelmapResult.attribution,
                   description: wheelmapResult.wheelchairDescription,
                 };
-
-                console.log(
-                  "[GoogleMap] Merged accessibility data:",
-                  venueData.accessibilityData,
-                );
               } catch (error) {
                 console.warn(
                   "[GoogleMap] Failed to fetch Wheelmap accessibility data:",

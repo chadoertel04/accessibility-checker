@@ -30,9 +30,22 @@ interface OSMElement {
   center?: { lat: number; lon: number };
   tags?: {
     name?: string;
+    amenity?: string;
     wheelchair?: OSMWheelchairStatus;
     "wheelchair:description"?: string;
+    // Restroom accessibility
     "toilets:wheelchair"?: OSMWheelchairStatus;
+    // Parking accessibility
+    "parking:wheelchair"?: OSMWheelchairStatus;
+    "capacity:disabled"?: string;
+    // Seating accessibility
+    "wheelchair:seating"?: OSMWheelchairStatus;
+    "seating:wheelchair"?: OSMWheelchairStatus;
+    // Other accessibility features
+    hearing_loop?: "yes" | "no";
+    tactile_paving?: "yes" | "no" | "contrasted" | "incorrect";
+    blind?: OSMWheelchairStatus;
+    deaf?: OSMWheelchairStatus;
     [key: string]: string | undefined;
   };
 }
@@ -48,6 +61,8 @@ export interface WheelmapAccessibilityResult {
   found: boolean;
   /** Accessibility options extracted from OSM data */
   accessibilityOptions: AccessibilityOptions;
+  /** Additional accessibility features (hearing, tactile, etc.) */
+  additionalAccessibility?: AdditionalAccessibilityInfo;
   /** Original OSM wheelchair status */
   wheelchairStatus?: OSMWheelchairStatus;
   /** Optional description of wheelchair accessibility */
@@ -129,35 +144,75 @@ function getElementCoords(element: OSMElement): { lat: number; lon: number } | n
 }
 
 /**
+ * Convert an OSM wheelchair status value to a boolean.
+ */
+function parseWheelchairStatus(status: OSMWheelchairStatus): boolean | null {
+  if (status === "yes" || status === "designated") return true;
+  if (status === "no") return false;
+  if (status === "limited") return true; // Limited counts as partially accessible
+  return null;
+}
+
+/**
  * Convert OSM wheelchair status to our AccessibilityOptions format.
  */
 function convertOSMStatus(element: OSMElement): AccessibilityOptions {
   const wheelchair = element.tags?.wheelchair;
   const toiletWheelchair = element.tags?.["toilets:wheelchair"];
+  const parkingWheelchair = element.tags?.["parking:wheelchair"];
+  const seatingWheelchair = element.tags?.["wheelchair:seating"] ?? element.tags?.["seating:wheelchair"];
+  const hasDisabledParking = element.tags?.["capacity:disabled"];
 
-  const entranceAccessible =
-    wheelchair === "yes" || wheelchair === "designated"
-      ? true
-      : wheelchair === "no"
-        ? false
-        : wheelchair === "limited"
-          ? true // Limited counts as partially accessible
-          : null;
+  const entranceAccessible = parseWheelchairStatus(wheelchair);
 
-  const restroomAccessible =
-    toiletWheelchair === "yes"
-      ? true
-      : toiletWheelchair === "no"
-        ? false
-        : null;
+  const restroomAccessible = parseWheelchairStatus(toiletWheelchair);
+
+  // Parking: check dedicated tag or capacity:disabled indicator
+  let parkingAccessible = parseWheelchairStatus(parkingWheelchair as OSMWheelchairStatus);
+  if (parkingAccessible === null && hasDisabledParking) {
+    // If there's a capacity:disabled tag with a number > 0, parking exists
+    const capacity = parseInt(hasDisabledParking, 10);
+    if (!isNaN(capacity) && capacity > 0) parkingAccessible = true;
+  }
+
+  const seatingAccessible = parseWheelchairStatus(seatingWheelchair as OSMWheelchairStatus);
 
   return {
     wheelchairAccessibleEntrance: entranceAccessible,
     wheelchairAccessibleRestroom: restroomAccessible,
-    wheelchairAccessibleParking: null,
-    wheelchairAccessibleSeating: null,
+    wheelchairAccessibleParking: parkingAccessible,
+    wheelchairAccessibleSeating: seatingAccessible,
   };
 }
+
+/** Additional accessibility features beyond wheelchair access */
+export interface AdditionalAccessibilityInfo {
+  hearingLoop?: boolean;
+  tactilePaving?: boolean | "contrasted" | "incorrect";
+  blindAccessible?: boolean | null;
+  deafAccessible?: boolean | null;
+}
+
+/**
+ * Extract additional accessibility features from OSM element.
+ */
+function extractAdditionalAccessibility(element: OSMElement): AdditionalAccessibilityInfo {
+  const tags = element.tags;
+  if (!tags) return {};
+
+  return {
+    hearingLoop: tags.hearing_loop === "yes" ? true : tags.hearing_loop === "no" ? false : undefined,
+    tactilePaving: tags.tactile_paving === "yes" ? true 
+      : tags.tactile_paving === "no" ? false 
+      : tags.tactile_paving === "contrasted" ? "contrasted"
+      : tags.tactile_paving === "incorrect" ? "incorrect"
+      : undefined,
+    blindAccessible: parseWheelchairStatus(tags.blind as OSMWheelchairStatus),
+    deafAccessible: parseWheelchairStatus(tags.deaf as OSMWheelchairStatus),
+  };
+}
+
+
 
 /**
  * Find the best matching OSM element for a given place.
@@ -196,16 +251,34 @@ function findBestMatch(
 }
 
 /**
- * Build Overpass QL query to find places with wheelchair tags near a location.
+ * Build Overpass QL query to find places with accessibility tags near a location.
  */
 function buildOverpassQuery(lat: number, lng: number, radiusMeters: number = 100): string {
-  // Search for nodes and ways with name tags that have wheelchair info
+  // Search for nodes and ways with accessibility-related tags
   // within the specified radius
   return `
     [out:json][timeout:10];
     (
+      // General wheelchair accessibility
       node["wheelchair"](around:${radiusMeters},${lat},${lng});
       way["wheelchair"](around:${radiusMeters},${lat},${lng});
+      // Wheelchair-accessible toilets/restrooms
+      node["toilets:wheelchair"](around:${radiusMeters},${lat},${lng});
+      way["toilets:wheelchair"](around:${radiusMeters},${lat},${lng});
+      // Disabled parking
+      node["capacity:disabled"](around:${radiusMeters},${lat},${lng});
+      way["capacity:disabled"](around:${radiusMeters},${lat},${lng});
+      node["parking:wheelchair"](around:${radiusMeters},${lat},${lng});
+      way["parking:wheelchair"](around:${radiusMeters},${lat},${lng});
+      // Wheelchair seating
+      node["wheelchair:seating"](around:${radiusMeters},${lat},${lng});
+      way["wheelchair:seating"](around:${radiusMeters},${lat},${lng});
+      // Other accessibility features
+      node["hearing_loop"](around:${radiusMeters},${lat},${lng});
+      way["hearing_loop"](around:${radiusMeters},${lat},${lng});
+      node["tactile_paving"](around:${radiusMeters},${lat},${lng});
+      way["tactile_paving"](around:${radiusMeters},${lat},${lng});
+      // Named places for matching
       node["name"](around:${radiusMeters},${lat},${lng});
       way["name"](around:${radiusMeters},${lat},${lng});
     );
@@ -265,37 +338,54 @@ export async function fetchWheelmapAccessibility(
         return emptyResult;
       }
 
-      // Find elements with wheelchair tags first
-      const withWheelchairTag = data.elements.filter(
-        (el) => el.tags?.wheelchair !== undefined,
+      // Find elements with any accessibility tags first
+      const withAccessibilityTag = data.elements.filter(
+        (el) => el.tags?.wheelchair !== undefined ||
+                el.tags?.["toilets:wheelchair"] !== undefined ||
+                el.tags?.["parking:wheelchair"] !== undefined ||
+                el.tags?.["capacity:disabled"] !== undefined ||
+                el.tags?.["wheelchair:seating"] !== undefined ||
+                el.tags?.hearing_loop !== undefined ||
+                el.tags?.tactile_paving !== undefined,
       );
 
-      // Try to match against elements with wheelchair data first
+      // Try to match against elements with accessibility data first
       let matchedElement = findBestMatch(
-        withWheelchairTag.length > 0 ? withWheelchairTag : data.elements,
+        withAccessibilityTag.length > 0 ? withAccessibilityTag : data.elements,
         name,
         lat,
         lng,
       );
 
-      // If we matched something without wheelchair data, look for any wheelchair data nearby
-      if (matchedElement && !matchedElement.tags?.wheelchair && withWheelchairTag.length > 0) {
-        // Use the first wheelchair-tagged element that's close
+      // If we matched something, enrich with accessibility data from nearby elements
+      if (matchedElement) {
         const coords = getElementCoords(matchedElement);
-        if (coords) {
-          const nearbyWithWheelchair = withWheelchairTag.find((el) => {
+        if (coords && withAccessibilityTag.length > 0) {
+          // Find all accessibility-tagged elements that are close
+          const nearbyAccessibility = withAccessibilityTag.filter((el) => {
+            if (el.id === matchedElement!.id) return false;
             const elCoords = getElementCoords(el);
             return elCoords && calculateDistance(coords.lat, coords.lon, elCoords.lat, elCoords.lon) < 50;
           });
-          if (nearbyWithWheelchair) {
-            // Use wheelchair data from nearby element
+
+          // Merge accessibility data from nearby elements
+          for (const nearbyEl of nearbyAccessibility) {
             matchedElement = {
               ...matchedElement,
               tags: {
                 ...matchedElement.tags,
-                wheelchair: nearbyWithWheelchair.tags?.wheelchair,
-                "toilets:wheelchair": nearbyWithWheelchair.tags?.["toilets:wheelchair"],
-                "wheelchair:description": nearbyWithWheelchair.tags?.["wheelchair:description"],
+                // Only copy tags that aren't already set
+                wheelchair: matchedElement.tags?.wheelchair ?? nearbyEl.tags?.wheelchair,
+                "toilets:wheelchair": matchedElement.tags?.["toilets:wheelchair"] ?? nearbyEl.tags?.["toilets:wheelchair"],
+                "parking:wheelchair": matchedElement.tags?.["parking:wheelchair"] ?? nearbyEl.tags?.["parking:wheelchair"],
+                "capacity:disabled": matchedElement.tags?.["capacity:disabled"] ?? nearbyEl.tags?.["capacity:disabled"],
+                "wheelchair:seating": matchedElement.tags?.["wheelchair:seating"] ?? nearbyEl.tags?.["wheelchair:seating"],
+                "seating:wheelchair": matchedElement.tags?.["seating:wheelchair"] ?? nearbyEl.tags?.["seating:wheelchair"],
+                "wheelchair:description": matchedElement.tags?.["wheelchair:description"] ?? nearbyEl.tags?.["wheelchair:description"],
+                hearing_loop: matchedElement.tags?.hearing_loop ?? nearbyEl.tags?.hearing_loop,
+                tactile_paving: matchedElement.tags?.tactile_paving ?? nearbyEl.tags?.tactile_paving,
+                blind: matchedElement.tags?.blind ?? nearbyEl.tags?.blind,
+                deaf: matchedElement.tags?.deaf ?? nearbyEl.tags?.deaf,
               },
             };
           }
@@ -312,6 +402,7 @@ export async function fetchWheelmapAccessibility(
       return {
         found: true,
         accessibilityOptions: convertOSMStatus(matchedElement),
+        additionalAccessibility: extractAdditionalAccessibility(matchedElement),
         wheelchairStatus: matchedElement.tags?.wheelchair,
         wheelchairDescription: matchedElement.tags?.["wheelchair:description"],
         matchedElement,

@@ -14,9 +14,23 @@ export interface AccessibilityOptions {
 /** Source of accessibility data */
 export type AccessibilityDataSource = "google" | "wheelmap" | "manual" | "unknown";
 
+/** Additional accessibility features beyond wheelchair access */
+export interface AdditionalAccessibilityOptions {
+  /** Hearing loop/induction loop available */
+  hearingLoop?: boolean;
+  /** Tactile paving for visually impaired */
+  tactilePaving?: boolean | "contrasted" | "incorrect";
+  /** Accessible for blind visitors */
+  blindAccessible?: boolean | null;
+  /** Accessible for deaf visitors */
+  deafAccessible?: boolean | null;
+}
+
 /** Accessibility data with source attribution */
 export interface AccessibilityData {
   options: AccessibilityOptions;
+  /** Additional non-wheelchair accessibility features */
+  additionalOptions?: AdditionalAccessibilityOptions;
   /** Primary source of the accessibility data */
   source: AccessibilityDataSource;
   /** Attribution text (e.g., "Data from Wheelmap.org") */
@@ -95,6 +109,17 @@ export interface VenueData {
   businessStatus?: string;
 }
 
+/** Icon types for accessibility features */
+export type AccessibilityIconType = 
+  | "entrance" 
+  | "parking" 
+  | "restroom" 
+  | "seating"
+  | "hearing" 
+  | "tactile" 
+  | "blind" 
+  | "deaf";
+
 /** Accessibility feature definition for display */
 export interface AccessibilityFeature {
   /** Unique key for the feature */
@@ -104,9 +129,25 @@ export interface AccessibilityFeature {
   /** Short description */
   description: string;
   /** Icon name/identifier */
-  icon: "entrance" | "parking" | "restroom" | "seating";
+  icon: AccessibilityIconType;
   /** Current status */
   status: "available" | "unavailable" | "unknown";
+}
+
+/** Additional accessibility feature definition (non-wheelchair) */
+export interface AdditionalAccessibilityFeature {
+  /** Unique key for the feature */
+  key: keyof AdditionalAccessibilityOptions;
+  /** Display label */
+  label: string;
+  /** Short description */
+  description: string;
+  /** Icon name/identifier */
+  icon: AccessibilityIconType;
+  /** Current status */
+  status: "available" | "unavailable" | "unknown";
+  /** Additional status info (e.g., "contrasted" for tactile paving) */
+  statusDetail?: string;
 }
 
 /** Props for venue selection callback */

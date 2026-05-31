@@ -1,4 +1,10 @@
-import type { AccessibilityOptions, AccessibilityFeature, AccessibilityData } from "@/types/places";
+import type { 
+  AccessibilityOptions, 
+  AccessibilityFeature, 
+  AccessibilityData,
+  AdditionalAccessibilityOptions,
+  AdditionalAccessibilityFeature,
+} from "@/types/places";
 import AccessibilityFeatureCard from "@/components/AccessibilityFeatureCard";
 
 interface AccessibilitySectionProps {
@@ -34,6 +40,34 @@ const FEATURE_DEFINITIONS: Omit<AccessibilityFeature, "status">[] = [
   },
 ];
 
+/** Additional feature definitions for non-wheelchair accessibility */
+const ADDITIONAL_FEATURE_DEFINITIONS: Omit<AdditionalAccessibilityFeature, "status" | "statusDetail">[] = [
+  {
+    key: "hearingLoop",
+    label: "Hearing Loop",
+    description: "Induction loop system for hearing aid users",
+    icon: "hearing",
+  },
+  {
+    key: "tactilePaving",
+    label: "Tactile Paving",
+    description: "Textured ground surfaces for visually impaired guidance",
+    icon: "tactile",
+  },
+  {
+    key: "blindAccessible",
+    label: "Blind Accessible",
+    description: "Accessible features for blind or low-vision visitors",
+    icon: "blind",
+  },
+  {
+    key: "deafAccessible",
+    label: "Deaf Accessible",
+    description: "Accessible features for deaf or hard-of-hearing visitors",
+    icon: "deaf",
+  },
+];
+
 /** Convert accessibility options to feature objects with status */
 function getFeatures(
   options?: AccessibilityOptions,
@@ -51,6 +85,31 @@ function getFeatures(
     }
 
     return { ...def, status };
+  });
+}
+
+/** Convert additional accessibility options to feature objects with status */
+function getAdditionalFeatures(
+  options?: AdditionalAccessibilityOptions,
+): AdditionalAccessibilityFeature[] {
+  return ADDITIONAL_FEATURE_DEFINITIONS.map((def) => {
+    const value = options?.[def.key];
+    let status: AdditionalAccessibilityFeature["status"];
+    let statusDetail: string | undefined;
+
+    if (value === true) {
+      status = "available";
+    } else if (value === false) {
+      status = "unavailable";
+    } else if (typeof value === "string") {
+      // Handle special cases like tactilePaving: "contrasted" | "incorrect"
+      status = value === "incorrect" ? "unavailable" : "available";
+      statusDetail = value;
+    } else {
+      status = "unknown";
+    }
+
+    return { ...def, status, statusDetail };
   });
 }
 
@@ -158,10 +217,14 @@ export default function AccessibilitySection({
   accessibilityData,
 }: AccessibilitySectionProps) {
   const features = getFeatures(accessibilityOptions);
+  const additionalFeatures = getAdditionalFeatures(accessibilityData?.additionalOptions);
   const summary = getAccessibilitySummary(features);
 
   // Check if we have any accessibility data
   const hasData = features.some((f) => f.status !== "unknown");
+  
+  // Check if we have any additional accessibility data
+  const hasAdditionalData = additionalFeatures.some((f) => f.status !== "unknown");
 
   return (
     <section aria-labelledby="accessibility-heading" className="space-y-4">
@@ -194,16 +257,41 @@ export default function AccessibilitySection({
         </div>
       </div>
 
-      {/* Feature cards */}
-      <div
-        role="list"
-        aria-label="Accessibility features"
-        className="grid gap-3 sm:grid-cols-2"
-      >
-        {features.map((feature) => (
-          <AccessibilityFeatureCard key={feature.key} feature={feature} />
-        ))}
+      {/* Wheelchair accessibility feature cards */}
+      <div>
+        <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+          Wheelchair Accessibility
+        </h4>
+        <div
+          role="list"
+          aria-label="Wheelchair accessibility features"
+          className="grid gap-3 sm:grid-cols-2"
+        >
+          {features.map((feature) => (
+            <AccessibilityFeatureCard key={feature.key} feature={feature} />
+          ))}
+        </div>
       </div>
+
+      {/* Additional accessibility feature cards */}
+      {hasAdditionalData && (
+        <div>
+          <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+            Additional Accessibility Features
+          </h4>
+          <div
+            role="list"
+            aria-label="Additional accessibility features"
+            className="grid gap-3 sm:grid-cols-2"
+          >
+            {additionalFeatures
+              .filter((f) => f.status !== "unknown")
+              .map((feature) => (
+                <AccessibilityFeatureCard key={feature.key} feature={feature} />
+              ))}
+          </div>
+        </div>
+      )}
 
       {/* Disclaimer and attribution */}
       <p className="text-xs text-slate-400 dark:text-slate-500 italic">

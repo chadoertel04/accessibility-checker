@@ -1,7 +1,7 @@
-import type { AccessibilityFeature } from "@/types/places";
+import type { AccessibilityFeature, AccessibilityIconType, AdditionalAccessibilityFeature } from "@/types/places";
 
 interface AccessibilityFeatureCardProps {
-  feature: AccessibilityFeature;
+  feature: AccessibilityFeature | AdditionalAccessibilityFeature;
 }
 
 /** Icon components for each accessibility feature type */
@@ -71,7 +71,85 @@ const FeatureIcons = {
       <path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4" />
     </svg>
   ),
-};
+  hearing: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* Ear shape */}
+      <path d="M6 8.5a6 6 0 0 1 12 0c0 4-3 5.5-3 8.5a3 3 0 1 1-6 0" />
+      <path d="M11 12a1 1 0 1 0 2 0c0-1-1-2-1-3" />
+      {/* Sound waves indicating hearing loop */}
+      <path d="M20 8c1 1 1.5 2.5 1.5 4s-.5 3-1.5 4" />
+      <path d="M22 6c1.5 1.5 2 3.5 2 6s-.5 4.5-2 6" />
+    </svg>
+  ),
+  tactile: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* Tactile paving dots pattern */}
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="7.5" cy="7.5" r="1" fill="currentColor" />
+      <circle cx="12" cy="7.5" r="1" fill="currentColor" />
+      <circle cx="16.5" cy="7.5" r="1" fill="currentColor" />
+      <circle cx="7.5" cy="12" r="1" fill="currentColor" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" />
+      <circle cx="16.5" cy="12" r="1" fill="currentColor" />
+      <circle cx="7.5" cy="16.5" r="1" fill="currentColor" />
+      <circle cx="12" cy="16.5" r="1" fill="currentColor" />
+      <circle cx="16.5" cy="16.5" r="1" fill="currentColor" />
+    </svg>
+  ),
+  blind: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* Eye with strike through */}
+      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+      <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+      <line x1="1" y1="1" x2="23" y2="23" />
+    </svg>
+  ),
+  deaf: (props: React.SVGProps<SVGSVGElement>) => (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      {...props}
+    >
+      {/* Ear with strike */}
+      <path d="M6 8.5a6 6 0 0 1 12 0c0 4-3 5.5-3 8.5a3 3 0 1 1-6 0" />
+      <path d="M11 12a1 1 0 1 0 2 0c0-1-1-2-1-3" />
+      <line x1="4" y1="4" x2="20" y2="20" />
+    </svg>
+  ),
+} satisfies Record<AccessibilityIconType, React.FC<React.SVGProps<SVGSVGElement>>>;
 
 /** Status indicator icon - checkmark for available, X for unavailable, question for unknown */
 const StatusIcon = ({ status }: { status: AccessibilityFeature["status"] }) => {

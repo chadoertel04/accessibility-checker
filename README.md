@@ -8,6 +8,7 @@ Author: Chad Oertel
 ## Prerequisites
 
 - Node ^20
+- Docker & Docker Compose (for PostgreSQL database)
 
 ## Quick Start
 
@@ -20,6 +21,70 @@ Author: Chad Oertel
 cp .env.example .env
 ```
 - `VITE_GOOGLE_API_KEY`: Google developer console api key.
+
+## PostgreSQL Database
+
+The project uses PostgreSQL for data persistence. A Docker Compose setup is provided for easy local development.
+
+### Starting the Database
+
+```bash
+# Start PostgreSQL container (runs in background)
+docker compose up -d
+
+# View logs
+docker compose logs -f postgres
+
+# Stop the container
+docker compose down
+
+# Stop and remove all data (fresh start)
+docker compose down -v
+```
+
+### Database Configuration
+
+The following environment variables can be set (defaults shown):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `POSTGRES_USER` | `postgres` | Database user |
+| `POSTGRES_PASSWORD` | `postgres` | Database password |
+| `POSTGRES_DB` | `accessibility_db` | Database name |
+| `POSTGRES_PORT` | `5432` | Host port mapping |
+
+To customize, create a `.env` file or set environment variables before running `docker compose up`:
+
+```bash
+POSTGRES_PASSWORD=mysecretpassword docker compose up -d
+```
+
+### Database Schema
+
+The database is automatically initialized on first run with the following tables:
+
+- **venues**: Stores venue/location data
+- **accessibility_data**: Accessibility information with source attribution
+- **user_reports**: User-submitted accessibility corrections
+- **opening_hours**: Venue opening hours
+- **saved_places**: User's bookmarked places
+- **search_history**: Search analytics
+
+See [docker/init-db/01-init-schema.sql](docker/init-db/01-init-schema.sql) for the full schema.
+
+### Connecting to the Database
+
+```bash
+# Using psql via Docker
+docker compose exec postgres psql -U postgres -d accessibility_db
+
+# Using external client
+# Host: localhost
+# Port: 5432 (or POSTGRES_PORT)
+# Database: accessibility_db
+# User: postgres
+# Password: postgres
+```
 
 ## Expanding the ESLint configuration
 

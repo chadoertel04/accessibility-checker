@@ -86,6 +86,79 @@ docker compose exec postgres psql -U postgres -d accessibility_db
 # Password: postgres
 ```
 
+## Keycloak Authentication
+
+The project uses [Keycloak](https://www.keycloak.org/) for authentication and identity management. Keycloak runs in development mode alongside PostgreSQL.
+
+### Starting Keycloak
+
+```bash
+# Start all services (PostgreSQL + Keycloak)
+docker compose up -d
+
+# Start only Keycloak (requires PostgreSQL to be running)
+docker compose up -d keycloak
+
+# View Keycloak logs
+docker compose logs -f keycloak
+
+# Stop all services
+docker compose down
+```
+
+### Keycloak Admin Console
+
+Once running, access the Keycloak Admin Console at:
+- **URL**: http://localhost:8080/admin
+- **Username**: `admin` (or `KEYCLOAK_ADMIN`)
+- **Password**: `admin` (or `KEYCLOAK_ADMIN_PASSWORD`)
+
+### Keycloak Configuration
+
+The following environment variables can be set (defaults shown):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `KEYCLOAK_ADMIN` | `admin` | Admin username |
+| `KEYCLOAK_ADMIN_PASSWORD` | `admin` | Admin password |
+| `KEYCLOAK_DB` | `keycloak` | Keycloak database name |
+| `KEYCLOAK_PORT` | `8080` | Keycloak HTTP port |
+| `KEYCLOAK_HEALTH_PORT` | `9000` | Health/metrics port |
+
+### Setting Up a Realm and Client
+
+1. Log in to the [Admin Console](http://localhost:8080/admin)
+2. Click **Manage realms** → **Create realm**
+3. Enter realm name (e.g., `accessibility-app`) and click **Create**
+4. Click **Clients** → **Create client**
+5. Set:
+   - Client type: `OpenID Connect`
+   - Client ID: `accessibility-checker`
+6. Click **Next**, enable **Standard flow**, click **Next**
+7. Set:
+   - Valid redirect URIs: `http://localhost:5173/*` (Vite dev server)
+   - Web origins: `http://localhost:5173`
+8. Click **Save**
+
+### Health & Metrics
+
+- **Health check**: http://localhost:9000/health
+- **Readiness**: http://localhost:9000/health/ready
+- **Liveness**: http://localhost:9000/health/live
+- **Metrics**: http://localhost:9000/metrics
+
+### Production Considerations
+
+The current setup runs Keycloak in **development mode** (`start-dev`). For production:
+
+- Use `start` instead of `start-dev`
+- Configure SSL/TLS certificates
+- Use strong admin passwords
+- Set proper hostname configuration
+- Consider using an optimized container image
+
+See the [Keycloak Server Guide](https://www.keycloak.org/guides#server) for production configuration.
+
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:

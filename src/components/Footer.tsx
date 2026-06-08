@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 
 const SOCIAL_LINKS = [
   {
-    href: "https://instagram.com",
+    href: "https://www.instagram.com/chad_oertel/",
     label: "Follow us on Instagram",
     icon: (
       <svg
@@ -16,7 +16,7 @@ const SOCIAL_LINKS = [
     ),
   },
   {
-    href: "https://linkedin.com",
+    href: "https://www.linkedin.com/in/chadoertel/",
     label: "Connect on LinkedIn",
     icon: (
       <svg
@@ -57,8 +57,7 @@ export default function Footer() {
 
           {/* Copyright */}
           <p className="text-xs text-slate-400 dark:text-slate-500 text-center">
-            © {new Date().getFullYear()} Accessibility App. All rights
-            reserved.
+            © {new Date().getFullYear()} AccessMap. All rights reserved.
           </p>
 
           {/* Social links */}

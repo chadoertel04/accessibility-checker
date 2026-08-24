@@ -21,6 +21,9 @@ Author: Chad Oertel
 cp .env.example .env
 ```
 - `VITE_GOOGLE_API_KEY`: Google developer console api key.
+- `VITE_KEYCLOAK_URL`: Keycloak base URL (for example http://localhost:8080).
+- `VITE_KEYCLOAK_REALM`: Realm used by this app.
+- `VITE_KEYCLOAK_CLIENT_ID`: OIDC client ID created in the realm.
 
 ## PostgreSQL Database
 
@@ -137,8 +140,38 @@ The following environment variables can be set (defaults shown):
 6. Click **Next**, enable **Standard flow**, click **Next**
 7. Set:
    - Valid redirect URIs: `http://localhost:5173/*` (Vite dev server)
+  - Valid post logout redirect URIs: `http://localhost:5173/*`
    - Web origins: `http://localhost:5173`
 8. Click **Save**
+
+### App Authentication Wiring
+
+The app now initializes Keycloak on startup and protects routes behind login.
+
+1. Copy environment variables and set your realm/client values:
+
+```bash
+cp .env.example .env
+```
+
+2. Ensure the following values in `.env` match your Keycloak setup:
+
+```env
+VITE_KEYCLOAK_URL=http://localhost:8080
+VITE_KEYCLOAK_REALM=accessibility-app
+VITE_KEYCLOAK_CLIENT_ID=accessibility-checker
+```
+
+3. Start backend services and the frontend:
+
+```bash
+docker compose up -d
+npm run dev
+```
+
+4. Open the app at http://localhost:5173. Unauthenticated users are redirected to Keycloak.
+
+5. After login, Keycloak redirects back to the app and authenticated routes are available.
 
 ### Health & Metrics
 

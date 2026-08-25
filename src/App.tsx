@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "react";
 import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
 import ErrorBoundary from "@/components/ErrorBoundary";
-import RequireAuth from "@/components/RequireAuth";
 
 // Lazy-loaded routes produce separate chunks, so the Google Maps SDK is only
 // downloaded when the user actually visits the Home page.
@@ -26,22 +25,8 @@ export default function App() {
           }
         >
           <Routes>
-            <Route
-              index
-              element={
-                <RequireAuth>
-                  <Home />
-                </RequireAuth>
-              }
-            />
-            <Route
-              path="about"
-              element={
-                <RequireAuth>
-                  <About />
-                </RequireAuth>
-              }
-            />
+            <Route index element={<Home />} />
+            <Route path="about" element={<About />} />
           </Routes>
         </Suspense>
       </ErrorBoundary>

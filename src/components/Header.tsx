@@ -61,7 +61,32 @@ export default function Header() {
             <div className="hidden sm:flex items-center gap-2">
               {isAuthenticated ? (
                 <>
-                  <span className="text-xs text-slate-500 dark:text-slate-400">{username ?? "Signed in"}</span>
+                  <Link
+                    to="/account"
+                    className="group inline-flex items-center gap-1.5 rounded-lg px-2 py-1 text-xs text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    aria-label="Open account page"
+                  >
+                    <span>{username ?? "Signed in"}</span>
+                    <svg
+                      aria-hidden="true"
+                      className="w-3.5 h-3.5 opacity-0 -translate-x-0.5 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0 group-focus-visible:opacity-100 group-focus-visible:translate-x-0"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                      stroke="currentColor"
+                      strokeWidth={1.8}
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M20.25 21v-1.875a4.125 4.125 0 0 0-4.125-4.125h-8.25a4.125 4.125 0 0 0-4.125 4.125V21"
+                      />
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        d="M12 11.25a4.125 4.125 0 1 0 0-8.25 4.125 4.125 0 0 0 0 8.25Z"
+                      />
+                    </svg>
+                  </Link>
                   <button
                     type="button"
                     onClick={() => void logout()}
@@ -154,16 +179,40 @@ export default function Header() {
               ))}
               <li className="pt-2 mt-2 border-t border-slate-200 dark:border-slate-800">
                 {isAuthenticated ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMenuOpen(false);
-                      void logout();
-                    }}
-                    className="w-full text-left block px-3 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    Sign out {username ? `(${username})` : ""}
-                  </button>
+                  <>
+                    <Link
+                      to="/account"
+                      onClick={() => setMenuOpen(false)}
+                      className="group w-full text-left flex items-center justify-between px-3 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                      aria-label="Open account page"
+                    >
+                      <span>{username ?? "My account"}</span>
+                      <svg
+                        aria-hidden="true"
+                        className="w-4 h-4 opacity-0 translate-x-0.5 transition-all duration-150 group-hover:opacity-100 group-hover:translate-x-0"
+                        fill="none"
+                        viewBox="0 0 24 24"
+                        stroke="currentColor"
+                        strokeWidth={1.8}
+                      >
+                        <path
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
+                          d="M17.25 8.25 21 12m0 0-3.75 3.75M21 12H3"
+                        />
+                      </svg>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMenuOpen(false);
+                        void logout();
+                      }}
+                      className="mt-1 w-full text-left block px-3 py-2 text-sm font-medium rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-50 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    >
+                      Sign out
+                    </button>
+                  </>
                 ) : (
                   <button
                     type="button"

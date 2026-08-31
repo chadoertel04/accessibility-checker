@@ -15,8 +15,14 @@ import type { AccessibilityOptions } from "@/types/places";
 /** Overpass API endpoints (public, free, no auth required) */
 const OVERPASS_ENDPOINTS = [
   "https://overpass-api.de/api/interpreter",
-  "https://overpass.kumi.systems/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://z.overpass-api.de/api/interpreter",
 ];
+
+const OVERPASS_TIMEOUT_MS = 7000;
+const OVERPASS_RADIUS_METERS = 80;
+const OVERPASS_QUERY_TIMEOUT_SECONDS = 8;
+const CACHE_TTL_MS = 5 * 60 * 1000;
 
 /** OSM wheelchair accessibility values */
 type OSMWheelchairStatus = "yes" | "limited" | "no" | "designated" | undefined;
@@ -54,6 +60,14 @@ interface OSMElement {
 interface OverpassResponse {
   elements: OSMElement[];
 }
+
+interface CachedResult {
+  expiresAt: number;
+  result: WheelmapAccessibilityResult;
+}
+
+const resultCache = new Map<string, CachedResult>();
+const inflightRequests = new Map<string, Promise<WheelmapAccessibilityResult>>();
 
 /** Result of accessibility data lookup */
 export interface WheelmapAccessibilityResult {
@@ -105,6 +119,10 @@ function normalizeForMatching(str: string): string {
     .replace(/[^\w\s]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildCacheKey(lat: number, lng: number, name: string): string {
+  return `${lat.toFixed(5)}:${lng.toFixed(5)}:${normalizeForMatching(name)}`;
 }
 
 /**
@@ -253,11 +271,11 @@ function findBestMatch(
 /**
  * Build Overpass QL query to find places with accessibility tags near a location.
  */
-function buildOverpassQuery(lat: number, lng: number, radiusMeters: number = 100): string {
-  // Search for nodes and ways with accessibility-related tags
-  // within the specified radius
+function buildOverpassQuery(lat: number, lng: number, radiusMeters: number = OVERPASS_RADIUS_METERS): string {
+  // Keep the query narrow to avoid server-side timeouts.
+  // We only fetch accessibility-tagged features near the selected venue.
   return `
-    [out:json][timeout:10];
+    [out:json][timeout:${OVERPASS_QUERY_TIMEOUT_SECONDS}];
     (
       // General wheelchair accessibility
       node["wheelchair"](around:${radiusMeters},${lat},${lng});
@@ -278,9 +296,6 @@ function buildOverpassQuery(lat: number, lng: number, radiusMeters: number = 100
       way["hearing_loop"](around:${radiusMeters},${lat},${lng});
       node["tactile_paving"](around:${radiusMeters},${lat},${lng});
       way["tactile_paving"](around:${radiusMeters},${lat},${lng});
-      // Named places for matching
-      node["name"](around:${radiusMeters},${lat},${lng});
-      way["name"](around:${radiusMeters},${lat},${lng});
     );
     out center;
   `.trim();
@@ -311,111 +326,147 @@ export async function fetchWheelmapAccessibility(
     attribution,
   };
 
-  const query = buildOverpassQuery(lat, lng, 150);
+  const cacheKey = buildCacheKey(lat, lng, name);
+  const now = Date.now();
 
-  // Try each endpoint until one succeeds
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    try {
-      console.log(`[OSM] Querying Overpass API at ${endpoint}...`);
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/x-www-form-urlencoded",
-        },
-        body: `data=${encodeURIComponent(query)}`,
-      });
-
-      if (!response.ok) {
-        console.warn(`[OSM] Overpass API returned ${response.status}:`, response.statusText);
-        continue;
-      }
-
-      const data: OverpassResponse = await response.json();
-      console.log(`[OSM] Found ${data.elements.length} elements near location`);
-
-      if (!data.elements || data.elements.length === 0) {
-        return emptyResult;
-      }
-
-      // Find elements with any accessibility tags first
-      const withAccessibilityTag = data.elements.filter(
-        (el) => el.tags?.wheelchair !== undefined ||
-                el.tags?.["toilets:wheelchair"] !== undefined ||
-                el.tags?.["parking:wheelchair"] !== undefined ||
-                el.tags?.["capacity:disabled"] !== undefined ||
-                el.tags?.["wheelchair:seating"] !== undefined ||
-                el.tags?.hearing_loop !== undefined ||
-                el.tags?.tactile_paving !== undefined,
-      );
-
-      // Try to match against elements with accessibility data first
-      let matchedElement = findBestMatch(
-        withAccessibilityTag.length > 0 ? withAccessibilityTag : data.elements,
-        name,
-        lat,
-        lng,
-      );
-
-      // If we matched something, enrich with accessibility data from nearby elements
-      if (matchedElement) {
-        const coords = getElementCoords(matchedElement);
-        if (coords && withAccessibilityTag.length > 0) {
-          // Find all accessibility-tagged elements that are close
-          const nearbyAccessibility = withAccessibilityTag.filter((el) => {
-            if (el.id === matchedElement!.id) return false;
-            const elCoords = getElementCoords(el);
-            return elCoords && calculateDistance(coords.lat, coords.lon, elCoords.lat, elCoords.lon) < 50;
-          });
-
-          // Merge accessibility data from nearby elements
-          for (const nearbyEl of nearbyAccessibility) {
-            matchedElement = {
-              ...matchedElement,
-              tags: {
-                ...matchedElement.tags,
-                // Only copy tags that aren't already set
-                wheelchair: matchedElement.tags?.wheelchair ?? nearbyEl.tags?.wheelchair,
-                "toilets:wheelchair": matchedElement.tags?.["toilets:wheelchair"] ?? nearbyEl.tags?.["toilets:wheelchair"],
-                "parking:wheelchair": matchedElement.tags?.["parking:wheelchair"] ?? nearbyEl.tags?.["parking:wheelchair"],
-                "capacity:disabled": matchedElement.tags?.["capacity:disabled"] ?? nearbyEl.tags?.["capacity:disabled"],
-                "wheelchair:seating": matchedElement.tags?.["wheelchair:seating"] ?? nearbyEl.tags?.["wheelchair:seating"],
-                "seating:wheelchair": matchedElement.tags?.["seating:wheelchair"] ?? nearbyEl.tags?.["seating:wheelchair"],
-                "wheelchair:description": matchedElement.tags?.["wheelchair:description"] ?? nearbyEl.tags?.["wheelchair:description"],
-                hearing_loop: matchedElement.tags?.hearing_loop ?? nearbyEl.tags?.hearing_loop,
-                tactile_paving: matchedElement.tags?.tactile_paving ?? nearbyEl.tags?.tactile_paving,
-                blind: matchedElement.tags?.blind ?? nearbyEl.tags?.blind,
-                deaf: matchedElement.tags?.deaf ?? nearbyEl.tags?.deaf,
-              },
-            };
-          }
-        }
-      }
-
-      if (!matchedElement) {
-        console.log("[OSM] No matching element found for:", name);
-        return emptyResult;
-      }
-
-      console.log("[OSM] Found matching element:", matchedElement.tags?.name, matchedElement);
-
-      return {
-        found: true,
-        accessibilityOptions: convertOSMStatus(matchedElement),
-        additionalAccessibility: extractAdditionalAccessibility(matchedElement),
-        wheelchairStatus: matchedElement.tags?.wheelchair,
-        wheelchairDescription: matchedElement.tags?.["wheelchair:description"],
-        matchedElement,
-        attribution,
-      };
-    } catch (error) {
-      console.warn(`[OSM] Failed to fetch from ${endpoint}:`, error);
-      // Try next endpoint
-    }
+  const cached = resultCache.get(cacheKey);
+  if (cached && cached.expiresAt > now) {
+    return cached.result;
   }
 
-  console.warn("[OSM] All Overpass endpoints failed");
-  return emptyResult;
+  const inflight = inflightRequests.get(cacheKey);
+  if (inflight) {
+    return inflight;
+  }
+
+  const query = buildOverpassQuery(lat, lng, OVERPASS_RADIUS_METERS);
+
+  const requestPromise = (async (): Promise<WheelmapAccessibilityResult> => {
+    // Try each endpoint until one succeeds
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
+
+      try {
+        console.log(`[OSM] Querying Overpass API at ${endpoint}...`);
+
+        const response = await fetch(endpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/x-www-form-urlencoded",
+          },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          console.warn(`[OSM] Overpass API returned ${response.status}:`, response.statusText);
+          continue;
+        }
+
+        const data: OverpassResponse = await response.json();
+        console.log(`[OSM] Found ${data.elements.length} accessibility-tagged elements near location`);
+
+        if (!data.elements || data.elements.length === 0) {
+          resultCache.set(cacheKey, {
+            result: emptyResult,
+            expiresAt: Date.now() + CACHE_TTL_MS,
+          });
+          return emptyResult;
+        }
+
+        // Try to match against returned accessibility-tagged elements.
+        let matchedElement = findBestMatch(data.elements, name, lat, lng);
+
+        if (matchedElement) {
+          const coords = getElementCoords(matchedElement);
+          if (coords) {
+            // Merge accessibility tags from nearby related features (e.g., entrance + separate restroom node).
+            const nearbyAccessibility = data.elements.filter((el) => {
+              if (el.id === matchedElement!.id) return false;
+              const elCoords = getElementCoords(el);
+              return (
+                elCoords &&
+                calculateDistance(coords.lat, coords.lon, elCoords.lat, elCoords.lon) < 40
+              );
+            });
+
+            for (const nearbyEl of nearbyAccessibility) {
+              matchedElement = {
+                ...matchedElement,
+                tags: {
+                  ...matchedElement.tags,
+                  wheelchair: matchedElement.tags?.wheelchair ?? nearbyEl.tags?.wheelchair,
+                  "toilets:wheelchair": matchedElement.tags?.["toilets:wheelchair"] ?? nearbyEl.tags?.["toilets:wheelchair"],
+                  "parking:wheelchair": matchedElement.tags?.["parking:wheelchair"] ?? nearbyEl.tags?.["parking:wheelchair"],
+                  "capacity:disabled": matchedElement.tags?.["capacity:disabled"] ?? nearbyEl.tags?.["capacity:disabled"],
+                  "wheelchair:seating": matchedElement.tags?.["wheelchair:seating"] ?? nearbyEl.tags?.["wheelchair:seating"],
+                  "seating:wheelchair": matchedElement.tags?.["seating:wheelchair"] ?? nearbyEl.tags?.["seating:wheelchair"],
+                  "wheelchair:description": matchedElement.tags?.["wheelchair:description"] ?? nearbyEl.tags?.["wheelchair:description"],
+                  hearing_loop: matchedElement.tags?.hearing_loop ?? nearbyEl.tags?.hearing_loop,
+                  tactile_paving: matchedElement.tags?.tactile_paving ?? nearbyEl.tags?.tactile_paving,
+                  blind: matchedElement.tags?.blind ?? nearbyEl.tags?.blind,
+                  deaf: matchedElement.tags?.deaf ?? nearbyEl.tags?.deaf,
+                },
+              };
+            }
+          }
+        }
+
+        if (!matchedElement) {
+          console.log("[OSM] No matching accessibility-tagged element found for:", name);
+          resultCache.set(cacheKey, {
+            result: emptyResult,
+            expiresAt: Date.now() + CACHE_TTL_MS,
+          });
+          return emptyResult;
+        }
+
+        console.log("[OSM] Found matching element:", matchedElement.tags?.name, matchedElement);
+
+        const result: WheelmapAccessibilityResult = {
+          found: true,
+          accessibilityOptions: convertOSMStatus(matchedElement),
+          additionalAccessibility: extractAdditionalAccessibility(matchedElement),
+          wheelchairStatus: matchedElement.tags?.wheelchair,
+          wheelchairDescription: matchedElement.tags?.["wheelchair:description"],
+          matchedElement,
+          attribution,
+        };
+
+        resultCache.set(cacheKey, {
+          result,
+          expiresAt: Date.now() + CACHE_TTL_MS,
+        });
+
+        return result;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          console.warn(`[OSM] Request timed out after ${OVERPASS_TIMEOUT_MS}ms at ${endpoint}`);
+        } else {
+          console.warn(`[OSM] Failed to fetch from ${endpoint}:`, error);
+        }
+        // Try next endpoint
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
+    }
+
+    console.warn("[OSM] All Overpass endpoints failed");
+    resultCache.set(cacheKey, {
+      result: emptyResult,
+      expiresAt: Date.now() + CACHE_TTL_MS,
+    });
+    return emptyResult;
+  })();
+
+  inflightRequests.set(cacheKey, requestPromise);
+
+  try {
+    return await requestPromise;
+  } finally {
+    inflightRequests.delete(cacheKey);
+  }
 }
 
 /**

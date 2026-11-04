@@ -5,11 +5,11 @@ import type {
   AdditionalAccessibilityOptions,
   AdditionalAccessibilityFeature,
 } from "@/types/places";
-import type { FeatureReviewSummary } from "@/types/reviews";
 import AccessibilityFeatureCard from "@/components/AccessibilityFeatureCard";
 import AccessibilityReviewControls from "@/components/AccessibilityReviewControls";
 import { useAccessibilityReviews } from "@/hooks/useAccessibilityReviews";
 import { REVIEWS_ENABLED } from "@/services/reviews";
+import { applyCommunityStatus, getCommunityNote } from "@/utils/communityStatus";
 
 interface AccessibilitySectionProps {
   /** Google Maps Place ID used to store and retrieve reviews for this venue. */
@@ -131,39 +131,6 @@ function getAccessibilitySummary(features: AccessibilityFeature[]) {
   const score = knownTotal > 0 ? Math.round((available / knownTotal) * 100) : null;
 
   return { available, unavailable, unknown, total, score };
-}
-
-/**
- * Visitor reviews resolve categories that the map data leaves unknown, so a
- * liked category is shown as "Yes" (and a disliked one as "No").
- */
-function applyCommunityStatus<
-  T extends { status: AccessibilityFeature["status"] },
->(feature: T, summary?: FeatureReviewSummary): T {
-  if (feature.status !== "unknown" || !summary) return feature;
-  if (summary.likes > summary.dislikes) return { ...feature, status: "available" };
-  if (summary.dislikes > summary.likes) return { ...feature, status: "unavailable" };
-  return feature;
-}
-
-function getCommunityNote(
-  originalStatus: AccessibilityFeature["status"],
-  summary?: FeatureReviewSummary,
-): string | undefined {
-  if (originalStatus !== "unknown" || !summary) return undefined;
-
-  const { likes, dislikes } = summary;
-  if (likes > dislikes) {
-    return `Reported as accessible by ${likes} visitor${likes === 1 ? "" : "s"}`;
-  }
-  if (dislikes > likes) {
-    return `Reported as not accessible by ${dislikes} visitor${dislikes === 1 ? "" : "s"}`;
-  }
-  if (likes > 0) {
-    return "Visitor reports are split on this feature";
-  }
-
-  return undefined;
 }
 
 /** Score ring component - visual indicator of accessibility level */

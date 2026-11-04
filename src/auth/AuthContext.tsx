@@ -15,7 +15,6 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   username: string | null;
   roles: string[];
-  token: string | undefined;
   error: string | null;
   login: () => Promise<void>;
   logout: () => Promise<void>;
@@ -71,10 +70,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     keycloak.onTokenExpired = () => {
-      void keycloak.updateToken(30).catch(() => {
-        setError("Session expired. Please sign in again.");
-        void keycloak.login();
-      });
+      // On failure, sign out locally (fires onAuthLogout) instead of redirecting:
+      // the map works anonymously, and RequireAuth handles protected routes.
+      void keycloak.updateToken(30).catch(() => keycloak.clearToken());
     };
 
     void initializeKeycloak({
@@ -97,16 +95,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       });
 
-    const refreshInterval = window.setInterval(() => {
-      if (!keycloak.authenticated) return;
-      void keycloak.updateToken(30).catch(() => {
-        setError("Unable to refresh session. Please sign in again.");
-      });
-    }, 30000);
-
     return () => {
       cancelled = true;
-      window.clearInterval(refreshInterval);
       keycloak.onAuthSuccess = undefined;
       keycloak.onAuthLogout = undefined;
       keycloak.onTokenExpired = undefined;
@@ -138,7 +128,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuthenticated,
       username,
       roles,
-      token: keycloak.token,
       error,
       login,
       logout,

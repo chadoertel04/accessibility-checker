@@ -12,7 +12,7 @@ export interface AccessibilityOptions {
 }
 
 /** Source of accessibility data */
-export type AccessibilityDataSource = "google" | "wheelmap" | "manual" | "unknown";
+export type AccessibilityDataSource = "wheelmap" | "unknown";
 
 /** Additional accessibility features beyond wheelchair access */
 export interface AdditionalAccessibilityOptions {

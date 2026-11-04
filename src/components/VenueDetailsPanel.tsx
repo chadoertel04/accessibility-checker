@@ -476,6 +476,7 @@ export default function VenueDetailsPanel({
 
                 {/* Accessibility section - the main feature */}
                 <AccessibilitySection
+                  placeId={venue.placeId}
                   accessibilityOptions={venue.accessibilityOptions}
                   accessibilityData={venue.accessibilityData}
                 />

@@ -12,4 +12,12 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  server: {
+    proxy: {
+      "/api": {
+        target: process.env.REVIEWS_API_PROXY_TARGET ?? "http://localhost:3001",
+        changeOrigin: true,
+      },
+    },
+  },
 });

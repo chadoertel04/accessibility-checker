@@ -1,7 +1,12 @@
+import type { ReactNode } from "react";
 import type { AccessibilityFeature, AccessibilityIconType, AdditionalAccessibilityFeature } from "@/types/places";
 
 interface AccessibilityFeatureCardProps {
   feature: AccessibilityFeature | AdditionalAccessibilityFeature;
+  /** Explains when the shown status comes from visitor reviews rather than map data. */
+  communityNote?: string;
+  /** Review controls rendered in the card footer. */
+  children?: ReactNode;
 }
 
 /** Icon components for each accessibility feature type */
@@ -226,6 +231,8 @@ const getStatusText = (status: AccessibilityFeature["status"]): string => {
  */
 export default function AccessibilityFeatureCard({
   feature,
+  communityNote,
+  children,
 }: AccessibilityFeatureCardProps) {
   const Icon = FeatureIcons[feature.icon];
 
@@ -258,41 +265,50 @@ export default function AccessibilityFeatureCard({
 
   return (
     <div
-      className={`relative flex items-start gap-3 p-4 rounded-xl border overflow-hidden transition-colors ${statusStyles[feature.status]}`}
+      className={`relative flex flex-col p-4 rounded-xl border overflow-hidden transition-colors ${statusStyles[feature.status]}`}
       role="listitem"
     >
-      {/* Feature icon */}
-      <div
-        className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg ${iconContainerStyles[feature.status]}`}
-      >
-        <Icon className="w-5 h-5" />
+      <div className="flex items-start gap-3">
+        {/* Feature icon */}
+        <div
+          className={`flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-lg ${iconContainerStyles[feature.status]}`}
+        >
+          <Icon className="w-5 h-5" />
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
+            <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+              {feature.label}
+            </h4>
+            {/* Status badge */}
+            <span
+              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusBadgeStyles[feature.status]}`}
+            >
+              <StatusIcon status={feature.status} />
+              <span className="sr-only">{getStatusText(feature.status)}</span>
+              <span aria-hidden="true">
+                {feature.status === "available"
+                  ? "Yes"
+                  : feature.status === "unavailable"
+                    ? "No"
+                    : "Unknown"}
+              </span>
+            </span>
+          </div>
+          <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+            {feature.description}
+          </p>
+          {communityNote && (
+            <p className="mt-1 text-xs font-medium text-indigo-600 dark:text-indigo-400">
+              {communityNote}
+            </p>
+          )}
+        </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-        <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-          <h4 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
-            {feature.label}
-          </h4>
-          {/* Status badge */}
-          <span
-            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium whitespace-nowrap ${statusBadgeStyles[feature.status]}`}
-          >
-            <StatusIcon status={feature.status} />
-            <span className="sr-only">{getStatusText(feature.status)}</span>
-            <span aria-hidden="true">
-              {feature.status === "available"
-                ? "Yes"
-                : feature.status === "unavailable"
-                  ? "No"
-                  : "Unknown"}
-            </span>
-          </span>
-        </div>
-        <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-          {feature.description}
-        </p>
-      </div>
+      {children}
     </div>
   );
 }

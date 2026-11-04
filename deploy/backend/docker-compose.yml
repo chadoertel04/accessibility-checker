@@ -1,8 +1,10 @@
-# Production Keycloak for the GitHub Pages app.
+# Production backend for the GitHub Pages app: Keycloak and the review API.
 # Runs on any Linux VPS with Docker: Caddy terminates HTTPS (automatic Let's Encrypt
-# certificates) and proxies to Keycloak; Postgres holds Keycloak's data.
-# Deployed by .github/workflows/deploy-keycloak.yml, which writes .env next to this file.
-# Only ports 80 and 443 are published; Keycloak and Postgres are reachable only inside Docker.
+# certificates) for both hostnames and proxies to Keycloak and the API. Each service
+# has its own Postgres, so they never share credentials.
+# Deployed by .github/workflows/deploy-backend.yml, which uploads the API source to
+# ./app and writes .env next to this file.
+# Only ports 80 and 443 are published; everything else is reachable only inside Docker.
 
 services:
   postgres:
@@ -54,6 +56,46 @@ services:
       retries: 5
       start_period: 90s
 
+  reviews-db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: reviews
+      POSTGRES_PASSWORD: ${REVIEWS_DB_PASSWORD:?set REVIEWS_DB_PASSWORD}
+      POSTGRES_DB: reviews
+    volumes:
+      - reviews_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reviews -d reviews"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: ./app
+      dockerfile: server/Dockerfile
+    restart: unless-stopped
+    environment:
+      # The API applies its schema (init-db/01-create-accessibility-reviews.sql) on every start.
+      DATABASE_URL: postgres://reviews:${REVIEWS_DB_PASSWORD}@reviews-db:5432/reviews
+      API_PORT: "3001"
+      API_ALLOWED_ORIGINS: ${APP_ORIGIN}
+      # Public Keycloak URL: it must match the "iss" claim in users' tokens.
+      KEYCLOAK_URL: https://${KEYCLOAK_DOMAIN}
+      KEYCLOAK_REALM: accessibility-app
+      # One proxy hop (Caddy), so req.ip is the visitor's IP for rate limiting.
+      API_TRUST_PROXY: "1"
+    depends_on:
+      reviews-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r => process.exit(r.ok ? 0 : 1), () => process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   caddy:
     image: caddy:2.10-alpine
     restart: unless-stopped
@@ -63,14 +105,17 @@ services:
       - "443:443/udp"
     environment:
       KEYCLOAK_DOMAIN: ${KEYCLOAK_DOMAIN}
+      API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - keycloak
+      - api
 
 volumes:
   postgres_data:
+  reviews_data:
   caddy_data:
   caddy_config:

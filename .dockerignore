@@ -1,0 +1,13 @@
+node_modules
+dist
+server/dist
+.git
+.github
+deploy
+public
+src
+**/*.test.ts
+**/*.test.tsx
+.env
+.env.*
+!.env.example

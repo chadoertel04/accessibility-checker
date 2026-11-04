@@ -1,0 +1,112 @@
+name: Deploy backend
+
+# Ships deploy/backend/ plus the review API source to the VPS over SSH, builds the
+# API image there and (re)starts the stack: Keycloak, the review API, Postgres x2, Caddy.
+# Setup steps are in README.md under "Deploying the backend".
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - deploy/backend/**
+      - server/**
+      - init-db/01-create-accessibility-reviews.sql
+      - package.json
+      - package-lock.json
+      - .github/workflows/deploy-backend.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: backend
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: backend
+    env:
+      BACKEND_SSH_USER: ${{ vars.BACKEND_SSH_USER }}
+      BACKEND_SSH_HOST: ${{ vars.BACKEND_SSH_HOST }}
+      SSH_TARGET: ${{ vars.BACKEND_SSH_USER }}@${{ vars.BACKEND_SSH_HOST }}
+      KEYCLOAK_DOMAIN: ${{ vars.KEYCLOAK_DOMAIN }}
+      API_DOMAIN: ${{ vars.API_DOMAIN }}
+      APP_URL: ${{ vars.APP_URL }}
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      KEYCLOAK_DB_PASSWORD: ${{ secrets.KEYCLOAK_DB_PASSWORD }}
+      KEYCLOAK_ADMIN_PASSWORD: ${{ secrets.KEYCLOAK_ADMIN_PASSWORD }}
+      REVIEWS_DB_PASSWORD: ${{ secrets.REVIEWS_DB_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check configuration
+        run: |
+          missing=0
+          for name in BACKEND_SSH_USER BACKEND_SSH_HOST KEYCLOAK_DOMAIN API_DOMAIN APP_URL APP_ORIGIN \
+                      KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_PASSWORD REVIEWS_DB_PASSWORD; do
+            if [ -z "${!name}" ]; then echo "::error::$name is not set"; missing=1; fi
+          done
+          # Unquoted values in Docker's .env break on spaces, quotes, '#' or '$';
+          # REVIEWS_DB_PASSWORD also goes into a postgres:// URL. Hex (openssl rand -hex 32) is always safe.
+          for name in KEYCLOAK_DB_PASSWORD KEYCLOAK_ADMIN_PASSWORD REVIEWS_DB_PASSWORD; do
+            if [[ ! "${!name}" =~ ^[A-Za-z0-9_-]+$ ]]; then
+              echo "::error::$name may only contain letters, digits, - and _ (use openssl rand -hex 32)"; missing=1
+            fi
+          done
+          exit $missing
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.BACKEND_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.BACKEND_SSH_KNOWN_HOSTS }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+          printf 'Host *\n  IdentityFile ~/.ssh/id_deploy\n  StrictHostKeyChecking yes\n' > ~/.ssh/config
+
+      - name: Upload stack and API source
+        run: |
+          stage="$RUNNER_TEMP/backend"
+          mkdir -p "$stage/app"
+          cp -r deploy/backend/. "$stage/"
+          rm -f "$stage/.env" "$stage/.env.example"
+          cp -r server init-db package.json package-lock.json .dockerignore "$stage/app/"
+          rm -rf "$stage/app/server/dist"
+          # app/ is replaced as a whole so deleted source files do not linger; .env and volumes stay.
+          tar -C "$stage" -cz . \
+            | ssh "$SSH_TARGET" 'mkdir -p ~/backend && rm -rf ~/backend/app && tar -xz -C ~/backend'
+
+      - name: Write server .env
+        run: |
+          printf '%s\n' \
+            "KEYCLOAK_DOMAIN=$KEYCLOAK_DOMAIN" \
+            "API_DOMAIN=$API_DOMAIN" \
+            "APP_URL=$APP_URL" \
+            "APP_ORIGIN=$APP_ORIGIN" \
+            "KEYCLOAK_DB_PASSWORD=$KEYCLOAK_DB_PASSWORD" \
+            "KEYCLOAK_ADMIN_PASSWORD=$KEYCLOAK_ADMIN_PASSWORD" \
+            "REVIEWS_DB_PASSWORD=$REVIEWS_DB_PASSWORD" \
+            | ssh "$SSH_TARGET" 'umask 077 && cat > ~/backend/.env'
+
+      - name: Build and start stack
+        run: |
+          ssh "$SSH_TARGET" 'cd ~/backend \
+            && docker compose pull --quiet --ignore-buildable \
+            && docker compose up -d --build --remove-orphans --wait --wait-timeout 300 \
+            && docker image prune -f'
+
+      - name: Check public endpoints
+        run: |
+          check() {
+            curl --fail --silent --show-error --retry 10 --retry-delay 6 --retry-all-errors "$1" > /dev/null
+          }
+          check "https://$KEYCLOAK_DOMAIN/realms/accessibility-app/.well-known/openid-configuration"
+          echo "Keycloak is live at https://$KEYCLOAK_DOMAIN"
+          check "https://$API_DOMAIN/api/health"
+          echo "Review API is live at https://$API_DOMAIN/api"

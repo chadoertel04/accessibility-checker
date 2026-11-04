@@ -9,6 +9,14 @@
   "resetPasswordAllowed": true,
   "verifyEmail": false,
   "bruteForceProtected": true,
+  "roles": {
+    "realm": [
+      {
+        "name": "moderator",
+        "description": "Can list reported reviews and hide, unhide or dismiss them via the review API"
+      }
+    ]
+  },
   "clients": [
     {
       "clientId": "accessibility-checker",

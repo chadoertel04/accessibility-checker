@@ -10,7 +10,7 @@
  * @see https://wiki.openstreetmap.org/wiki/Key:wheelchair
  */
 
-import type { AccessibilityOptions } from "@/types/places";
+import type { AccessibilityOptions, AdditionalAccessibilityOptions } from "@/types/places";
 
 /** Overpass API endpoints (public, free, no auth required) */
 const OVERPASS_ENDPOINTS = [
@@ -23,6 +23,20 @@ const OVERPASS_TIMEOUT_MS = 7000;
 const OVERPASS_RADIUS_METERS = 80;
 const OVERPASS_QUERY_TIMEOUT_SECONDS = 8;
 const CACHE_TTL_MS = 5 * 60 * 1000;
+
+/** Every OSM tag convertOSMStatus / extractAdditionalAccessibility reads. */
+const OVERPASS_TAGS = [
+  "wheelchair",
+  "toilets:wheelchair",
+  "capacity:disabled",
+  "parking:wheelchair",
+  "wheelchair:seating",
+  "seating:wheelchair",
+  "hearing_loop",
+  "tactile_paving",
+  "blind",
+  "deaf",
+];
 
 /** OSM wheelchair accessibility values */
 type OSMWheelchairStatus = "yes" | "limited" | "no" | "designated" | undefined;
@@ -76,13 +90,9 @@ export interface WheelmapAccessibilityResult {
   /** Accessibility options extracted from OSM data */
   accessibilityOptions: AccessibilityOptions;
   /** Additional accessibility features (hearing, tactile, etc.) */
-  additionalAccessibility?: AdditionalAccessibilityInfo;
-  /** Original OSM wheelchair status */
-  wheelchairStatus?: OSMWheelchairStatus;
+  additionalAccessibility?: AdditionalAccessibilityOptions;
   /** Optional description of wheelchair accessibility */
   wheelchairDescription?: string;
-  /** The matched OSM element, if found */
-  matchedElement?: OSMElement;
   /** Data source attribution */
   attribution: string;
 }
@@ -112,11 +122,12 @@ function calculateDistance(
 
 /**
  * Normalize a string for fuzzy matching (lowercase, remove punctuation, trim).
+ * Unicode-aware so non-Latin and accented names keep their letters.
  */
 function normalizeForMatching(str: string): string {
   return str
     .toLowerCase()
-    .replace(/[^\w\s]/g, "")
+    .replace(/[^\p{L}\p{N}\s]/gu, "")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -132,6 +143,8 @@ function calculateSimilarity(str1: string, str2: string): number {
   const norm1 = normalizeForMatching(str1);
   const norm2 = normalizeForMatching(str2);
 
+  // Names with nothing left to compare must not count as a match.
+  if (!norm1 || !norm2) return 0;
   if (norm1 === norm2) return 1;
 
   if (norm1.includes(norm2) || norm2.includes(norm1)) {
@@ -163,11 +176,11 @@ function getElementCoords(element: OSMElement): { lat: number; lon: number } | n
 
 /**
  * Convert an OSM wheelchair status value to a boolean.
+ * "limited" (e.g. one step) stays unknown: showing "Yes" would mislead wheelchair users.
  */
-function parseWheelchairStatus(status: OSMWheelchairStatus): boolean | null {
+export function parseWheelchairStatus(status: OSMWheelchairStatus): boolean | null {
   if (status === "yes" || status === "designated") return true;
   if (status === "no") return false;
-  if (status === "limited") return true; // Limited counts as partially accessible
   return null;
 }
 
@@ -203,18 +216,10 @@ function convertOSMStatus(element: OSMElement): AccessibilityOptions {
   };
 }
 
-/** Additional accessibility features beyond wheelchair access */
-export interface AdditionalAccessibilityInfo {
-  hearingLoop?: boolean;
-  tactilePaving?: boolean | "contrasted" | "incorrect";
-  blindAccessible?: boolean | null;
-  deafAccessible?: boolean | null;
-}
-
 /**
  * Extract additional accessibility features from OSM element.
  */
-function extractAdditionalAccessibility(element: OSMElement): AdditionalAccessibilityInfo {
+function extractAdditionalAccessibility(element: OSMElement): AdditionalAccessibilityOptions {
   const tags = element.tags;
   if (!tags) return {};
 
@@ -235,7 +240,7 @@ function extractAdditionalAccessibility(element: OSMElement): AdditionalAccessib
 /**
  * Find the best matching OSM element for a given place.
  */
-function findBestMatch(
+export function findBestMatch(
   elements: OSMElement[],
   targetName: string,
   targetLat: number,
@@ -273,32 +278,10 @@ function findBestMatch(
  */
 function buildOverpassQuery(lat: number, lng: number, radiusMeters: number = OVERPASS_RADIUS_METERS): string {
   // Keep the query narrow to avoid server-side timeouts.
-  // We only fetch accessibility-tagged features near the selected venue.
-  return `
-    [out:json][timeout:${OVERPASS_QUERY_TIMEOUT_SECONDS}];
-    (
-      // General wheelchair accessibility
-      node["wheelchair"](around:${radiusMeters},${lat},${lng});
-      way["wheelchair"](around:${radiusMeters},${lat},${lng});
-      // Wheelchair-accessible toilets/restrooms
-      node["toilets:wheelchair"](around:${radiusMeters},${lat},${lng});
-      way["toilets:wheelchair"](around:${radiusMeters},${lat},${lng});
-      // Disabled parking
-      node["capacity:disabled"](around:${radiusMeters},${lat},${lng});
-      way["capacity:disabled"](around:${radiusMeters},${lat},${lng});
-      node["parking:wheelchair"](around:${radiusMeters},${lat},${lng});
-      way["parking:wheelchair"](around:${radiusMeters},${lat},${lng});
-      // Wheelchair seating
-      node["wheelchair:seating"](around:${radiusMeters},${lat},${lng});
-      way["wheelchair:seating"](around:${radiusMeters},${lat},${lng});
-      // Other accessibility features
-      node["hearing_loop"](around:${radiusMeters},${lat},${lng});
-      way["hearing_loop"](around:${radiusMeters},${lat},${lng});
-      node["tactile_paving"](around:${radiusMeters},${lat},${lng});
-      way["tactile_paving"](around:${radiusMeters},${lat},${lng});
-    );
-    out center;
-  `.trim();
+  // We only fetch accessibility-tagged features (nodes, ways, relations) near the venue.
+  const around = `(around:${radiusMeters},${lat},${lng})`;
+  const statements = OVERPASS_TAGS.map((tag) => `nwr["${tag}"]${around};`).join("\n");
+  return `[out:json][timeout:${OVERPASS_QUERY_TIMEOUT_SECONDS}];\n(\n${statements}\n);\nout center;`;
 }
 
 /**
@@ -348,8 +331,6 @@ export async function fetchWheelmapAccessibility(
       const timeoutId = window.setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
 
       try {
-        console.log(`[OSM] Querying Overpass API at ${endpoint}...`);
-
         const response = await fetch(endpoint, {
           method: "POST",
           headers: {
@@ -365,7 +346,6 @@ export async function fetchWheelmapAccessibility(
         }
 
         const data: OverpassResponse = await response.json();
-        console.log(`[OSM] Found ${data.elements.length} accessibility-tagged elements near location`);
 
         if (!data.elements || data.elements.length === 0) {
           resultCache.set(cacheKey, {
@@ -382,8 +362,11 @@ export async function fetchWheelmapAccessibility(
           const coords = getElementCoords(matchedElement);
           if (coords) {
             // Merge accessibility tags from nearby related features (e.g., entrance + separate restroom node).
+            // Only unnamed parts (entrance, toilet node) or same-name parts: never a neighbouring business.
+            const matchedName = matchedElement.tags?.name;
             const nearbyAccessibility = data.elements.filter((el) => {
               if (el.id === matchedElement!.id) return false;
+              if (el.tags?.name && el.tags.name !== matchedName) return false;
               const elCoords = getElementCoords(el);
               return (
                 elCoords &&
@@ -414,7 +397,6 @@ export async function fetchWheelmapAccessibility(
         }
 
         if (!matchedElement) {
-          console.log("[OSM] No matching accessibility-tagged element found for:", name);
           resultCache.set(cacheKey, {
             result: emptyResult,
             expiresAt: Date.now() + CACHE_TTL_MS,
@@ -422,15 +404,11 @@ export async function fetchWheelmapAccessibility(
           return emptyResult;
         }
 
-        console.log("[OSM] Found matching element:", matchedElement.tags?.name, matchedElement);
-
         const result: WheelmapAccessibilityResult = {
           found: true,
           accessibilityOptions: convertOSMStatus(matchedElement),
           additionalAccessibility: extractAdditionalAccessibility(matchedElement),
-          wheelchairStatus: matchedElement.tags?.wheelchair,
           wheelchairDescription: matchedElement.tags?.["wheelchair:description"],
-          matchedElement,
           attribution,
         };
 
@@ -452,11 +430,8 @@ export async function fetchWheelmapAccessibility(
       }
     }
 
+    // Not cached: an outage must not hide data once Overpass is back.
     console.warn("[OSM] All Overpass endpoints failed");
-    resultCache.set(cacheKey, {
-      result: emptyResult,
-      expiresAt: Date.now() + CACHE_TTL_MS,
-    });
     return emptyResult;
   })();
 

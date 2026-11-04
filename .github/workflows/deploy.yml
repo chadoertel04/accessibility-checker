@@ -39,6 +39,12 @@ jobs:
         env:
           NODE_ENV: production
           VITE_GOOGLE_API_KEY: ${{ secrets.VITE_GOOGLE_API_KEY }}
+          # Required: the app fails to start without these. Must be a publicly reachable Keycloak.
+          VITE_KEYCLOAK_URL: ${{ vars.VITE_KEYCLOAK_URL }}
+          VITE_KEYCLOAK_REALM: ${{ vars.VITE_KEYCLOAK_REALM }}
+          VITE_KEYCLOAK_CLIENT_ID: ${{ vars.VITE_KEYCLOAK_CLIENT_ID }}
+          # Optional: community reviews are hidden in production builds when unset.
+          VITE_REVIEWS_API_URL: ${{ vars.VITE_REVIEWS_API_URL }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

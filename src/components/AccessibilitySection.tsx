@@ -1,13 +1,19 @@
-import type { 
+import type {
   AccessibilityOptions, 
   AccessibilityFeature, 
   AccessibilityData,
   AdditionalAccessibilityOptions,
   AdditionalAccessibilityFeature,
 } from "@/types/places";
+import type { FeatureReviewSummary } from "@/types/reviews";
 import AccessibilityFeatureCard from "@/components/AccessibilityFeatureCard";
+import AccessibilityReviewControls from "@/components/AccessibilityReviewControls";
+import { useAccessibilityReviews } from "@/hooks/useAccessibilityReviews";
+import { REVIEWS_ENABLED } from "@/services/reviews";
 
 interface AccessibilitySectionProps {
+  /** Google Maps Place ID used to store and retrieve reviews for this venue. */
+  placeId?: string;
   accessibilityOptions?: AccessibilityOptions;
   accessibilityData?: AccessibilityData;
 }
@@ -127,6 +133,39 @@ function getAccessibilitySummary(features: AccessibilityFeature[]) {
   return { available, unavailable, unknown, total, score };
 }
 
+/**
+ * Visitor reviews resolve categories that the map data leaves unknown, so a
+ * liked category is shown as "Yes" (and a disliked one as "No").
+ */
+function applyCommunityStatus<
+  T extends { status: AccessibilityFeature["status"] },
+>(feature: T, summary?: FeatureReviewSummary): T {
+  if (feature.status !== "unknown" || !summary) return feature;
+  if (summary.likes > summary.dislikes) return { ...feature, status: "available" };
+  if (summary.dislikes > summary.likes) return { ...feature, status: "unavailable" };
+  return feature;
+}
+
+function getCommunityNote(
+  originalStatus: AccessibilityFeature["status"],
+  summary?: FeatureReviewSummary,
+): string | undefined {
+  if (originalStatus !== "unknown" || !summary) return undefined;
+
+  const { likes, dislikes } = summary;
+  if (likes > dislikes) {
+    return `Reported as accessible by ${likes} visitor${likes === 1 ? "" : "s"}`;
+  }
+  if (dislikes > likes) {
+    return `Reported as not accessible by ${dislikes} visitor${dislikes === 1 ? "" : "s"}`;
+  }
+  if (likes > 0) {
+    return "Visitor reports are split on this feature";
+  }
+
+  return undefined;
+}
+
 /** Score ring component - visual indicator of accessibility level */
 function ScoreRing({ score }: { score: number | null }) {
   // If no score (all unknown), show a neutral state
@@ -213,18 +252,56 @@ function ScoreRing({ score }: { score: number | null }) {
  * Includes a summary score and individual feature cards.
  */
 export default function AccessibilitySection({
+  placeId: venuePlaceId,
   accessibilityOptions,
   accessibilityData,
 }: AccessibilitySectionProps) {
-  const features = getFeatures(accessibilityOptions);
-  const additionalFeatures = getAdditionalFeatures(accessibilityData?.additionalOptions);
+  const placeId = REVIEWS_ENABLED ? venuePlaceId : undefined;
+  const reviews = useAccessibilityReviews(placeId);
+  const mapFeatures = getFeatures(accessibilityOptions);
+  const mapAdditionalFeatures = getAdditionalFeatures(accessibilityData?.additionalOptions);
+  const features = mapFeatures.map((f) =>
+    applyCommunityStatus(f, reviews.summaryByFeature[f.key]),
+  );
   const summary = getAccessibilitySummary(features);
 
   // Check if we have any accessibility data
   const hasData = features.some((f) => f.status !== "unknown");
-  
-  // Check if we have any additional accessibility data
-  const hasAdditionalData = additionalFeatures.some((f) => f.status !== "unknown");
+
+  // With a place ID, unknown additional features stay visible so visitors can review them.
+  const additionalFeatures = mapAdditionalFeatures
+    .filter((f) => placeId || f.status !== "unknown")
+    .map((f) => ({
+      original: f.status,
+      feature: applyCommunityStatus(f, reviews.summaryByFeature[f.key]),
+    }));
+
+  const renderCard = (
+    feature: AccessibilityFeature | AdditionalAccessibilityFeature,
+    originalStatus: AccessibilityFeature["status"],
+  ) => {
+    const featureSummary = reviews.summaryByFeature[feature.key];
+    return (
+      <AccessibilityFeatureCard
+        key={feature.key}
+        feature={feature}
+        communityNote={getCommunityNote(originalStatus, featureSummary)}
+      >
+        {placeId && (
+          <AccessibilityReviewControls
+            featureKey={feature.key}
+            featureLabel={feature.label}
+            summary={featureSummary}
+            isAuthenticated={reviews.isAuthenticated}
+            isPending={reviews.pendingFeature === feature.key}
+            onVote={(key, sentiment, comment) => void reviews.vote(key, sentiment, comment)}
+            onRemoveVote={(key) => void reviews.removeVote(key)}
+            onRequestSignIn={reviews.requestSignIn}
+          />
+        )}
+      </AccessibilityFeatureCard>
+    );
+  };
 
   return (
     <section aria-labelledby="accessibility-heading" className="space-y-4">
@@ -267,14 +344,12 @@ export default function AccessibilitySection({
           aria-label="Wheelchair accessibility features"
           className="grid gap-3 sm:grid-cols-2"
         >
-          {features.map((feature) => (
-            <AccessibilityFeatureCard key={feature.key} feature={feature} />
-          ))}
+          {features.map((feature, i) => renderCard(feature, mapFeatures[i].status))}
         </div>
       </div>
 
       {/* Additional accessibility feature cards */}
-      {hasAdditionalData && (
+      {additionalFeatures.length > 0 && (
         <div>
           <h4 className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
             Additional Accessibility Features
@@ -284,13 +359,15 @@ export default function AccessibilitySection({
             aria-label="Additional accessibility features"
             className="grid gap-3 sm:grid-cols-2"
           >
-            {additionalFeatures
-              .filter((f) => f.status !== "unknown")
-              .map((feature) => (
-                <AccessibilityFeatureCard key={feature.key} feature={feature} />
-              ))}
+            {additionalFeatures.map(({ feature, original }) => renderCard(feature, original))}
           </div>
         </div>
+      )}
+
+      {reviews.error && (
+        <p role="alert" className="text-xs text-rose-600 dark:text-rose-400">
+          {reviews.error}
+        </p>
       )}
 
       {/* Disclaimer and attribution */}

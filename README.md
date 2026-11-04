@@ -64,16 +64,82 @@ POSTGRES_PASSWORD=mysecretpassword docker compose up -d
 
 ### Database Schema
 
-The database is automatically initialized on first run with the following tables:
+The scripts in [init-db/](init-db/) run on the container's first start. They create the
+`keycloak` database and the `accessibility_reviews` table (one like/dislike plus an optional
+note per user, venue and accessibility category). The review API re-applies
+[01-create-accessibility-reviews.sql](init-db/01-create-accessibility-reviews.sql) on boot,
+so existing volumes pick up schema changes.
 
-- **venues**: Stores venue/location data
-- **accessibility_data**: Accessibility information with source attribution
-- **user_reports**: User-submitted accessibility corrections
-- **opening_hours**: Venue opening hours
-- **saved_places**: User's bookmarked places
-- **search_history**: Search analytics
+## Review API
 
-See [docker/init-db/01-init-schema.sql](docker/init-db/01-init-schema.sql) for the full schema.
+Community reviews are served by a small Express API in [server/](server/). It verifies
+Keycloak tokens and stores reviews in PostgreSQL.
+
+```bash
+docker compose up -d     # PostgreSQL + Keycloak
+npm run server:dev       # API on http://localhost:3001 (Vite proxies /api to it)
+npm run dev              # frontend
+npm test                 # frontend + server tests
+```
+
+Its settings (`API_PORT`, `API_ALLOWED_ORIGINS`, `DATABASE_URL`, `KEYCLOAK_URL`,
+`KEYCLOAK_REALM`) are listed in [.env.example](.env.example). Production builds hide
+reviews unless `VITE_REVIEWS_API_URL` points at a deployed API.
+
+## Deployment
+
+Pushes to `main` deploy to GitHub Pages ([deploy.yml](.github/workflows/deploy.yml)). Set these
+repository variables first, or the app will not start: `VITE_KEYCLOAK_URL` (a publicly reachable
+Keycloak, see below), `VITE_KEYCLOAK_REALM` and `VITE_KEYCLOAK_CLIENT_ID`. Optionally set
+`VITE_REVIEWS_API_URL`.
+
+### Deploying Keycloak
+
+Production Keycloak runs on a Linux VPS from [deploy/keycloak/](deploy/keycloak/): Keycloak in
+production mode, its own PostgreSQL, and Caddy in front for automatic HTTPS. The realm and the
+`accessibility-checker` client (public client, PKCE, redirect URIs for the Pages site) are created
+from [realm/accessibility-app.json](deploy/keycloak/realm/accessibility-app.json) on first start, and
+anyone can register an account. [deploy-keycloak.yml](.github/workflows/deploy-keycloak.yml)
+deploys it on pushes to `main` that touch `deploy/keycloak/`, or by hand from the Actions tab.
+
+One-time setup:
+
+1. **Server:** any VPS with 2 GB RAM or more, Docker Engine with the Compose plugin, and ports 80 and
+   443 open. Create a deploy user in the `docker` group and add a public SSH key to its
+   `~/.ssh/authorized_keys`.
+2. **DNS:** point an A (and AAAA) record such as `auth.example.com` at the server. Caddy
+   gets the HTTPS certificate on first start, so DNS must resolve before the first deploy.
+3. **GitHub environment:** under Settings → Environments, create an environment named `keycloak`
+   and add:
+
+   | Kind | Name | Value |
+   |------|------|-------|
+   | Variable | `KEYCLOAK_SSH_HOST` | Server IP or hostname |
+   | Variable | `KEYCLOAK_SSH_USER` | Deploy user |
+   | Variable | `KEYCLOAK_DOMAIN` | `auth.example.com` |
+   | Variable | `APP_URL` | `https://chadoertel04.github.io/accessibility-checker` |
+   | Variable | `APP_ORIGIN` | `https://chadoertel04.github.io` |
+   | Secret | `KEYCLOAK_SSH_KEY` | Private key matching the server's authorized key |
+   | Secret | `KEYCLOAK_SSH_KNOWN_HOSTS` | Output of `ssh-keyscan <server>` |
+   | Secret | `KEYCLOAK_DB_PASSWORD` | `openssl rand -hex 32` |
+   | Secret | `KEYCLOAK_ADMIN_PASSWORD` | `openssl rand -hex 32` |
+
+4. Run **Deploy Keycloak** from the Actions tab. It finishes by fetching
+   `https://<KEYCLOAK_DOMAIN>/realms/accessibility-app/.well-known/openid-configuration`.
+5. Set the repository variables for the frontend build: `VITE_KEYCLOAK_URL=https://auth.example.com`,
+   `VITE_KEYCLOAK_REALM=accessibility-app`, `VITE_KEYCLOAK_CLIENT_ID=accessibility-checker`. Then
+   re-run **Deploy to GitHub Pages**. The review API (when deployed) needs `KEYCLOAK_URL` set to
+   the same address.
+6. Sign in at `https://auth.example.com/admin` as `admin` and change the password. The bootstrap
+   password is only used on the first start.
+
+Notes:
+
+- The realm file is imported only when the realm does not exist yet. Later changes, for example a
+  new redirect URI, must be made in the admin console or by deleting the realm before a redeploy.
+- `KEYCLOAK_DB_PASSWORD` is fixed when the database volume is first created. Changing the secret
+  later needs a matching `ALTER USER keycloak PASSWORD '...'` inside the Postgres container.
+- Back up the `postgres_data` volume. It holds every user account.
 
 ### Connecting to the Database
 
@@ -146,7 +212,7 @@ The following environment variables can be set (defaults shown):
 
 ### App Authentication Wiring
 
-The app now initializes Keycloak on startup and protects routes behind login.
+The app initializes Keycloak on startup. Browsing the map needs no login; the Account page and voting on reviews do.
 
 1. Copy environment variables and set your realm/client values:
 
@@ -169,9 +235,9 @@ docker compose up -d
 npm run dev
 ```
 
-4. Open the app at http://localhost:5173. Unauthenticated users are redirected to Keycloak.
+4. Open the app at http://localhost:5173. Opening the Account page or voting on a review sends you to Keycloak to sign in.
 
-5. After login, Keycloak redirects back to the app and authenticated routes are available.
+5. After login, Keycloak redirects back to the app.
 
 ### Health & Metrics
 
@@ -191,45 +257,3 @@ The current setup runs Keycloak in **development mode** (`start-dev`). For produ
 - Consider using an optimized container image
 
 See the [Keycloak Server Guide](https://www.keycloak.org/guides#server) for production configuration.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type aware lint rules:
-
-- Configure the top-level `parserOptions` property like this:
-
-```js
-export default tseslint.config({
-  languageOptions: {
-    // other options...
-    parserOptions: {
-      project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-      tsconfigRootDir: import.meta.dirname,
-    },
-  },
-});
-```
-
-- Replace `tseslint.configs.recommended` to `tseslint.configs.recommendedTypeChecked` or `tseslint.configs.strictTypeChecked`
-- Optionally add `...tseslint.configs.stylisticTypeChecked`
-- Install [eslint-plugin-react](https://github.com/jsx-eslint/eslint-plugin-react) and update the config:
-
-```js
-// eslint.config.js
-import react from "eslint-plugin-react";
-
-export default tseslint.config({
-  // Set the react version
-  settings: { react: { version: "18.3" } },
-  plugins: {
-    // Add the react plugin
-    react,
-  },
-  rules: {
-    // other rules...
-    // Enable its recommended rules
-    ...react.configs.recommended.rules,
-    ...react.configs["jsx-runtime"].rules,
-  },
-});
-```

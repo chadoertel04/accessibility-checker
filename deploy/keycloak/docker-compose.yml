@@ -1,0 +1,76 @@
+# Production Keycloak for the GitHub Pages app.
+# Runs on any Linux VPS with Docker: Caddy terminates HTTPS (automatic Let's Encrypt
+# certificates) and proxies to Keycloak; Postgres holds Keycloak's data.
+# Deployed by .github/workflows/deploy-keycloak.yml, which writes .env next to this file.
+# Only ports 80 and 443 are published; Keycloak and Postgres are reachable only inside Docker.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?set KEYCLOAK_DB_PASSWORD}
+      POSTGRES_DB: keycloak
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U keycloak -d keycloak"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    restart: unless-stopped
+    # --import-realm creates the realm on first start and skips it once it exists.
+    command: start --import-realm
+    environment:
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD}
+      KC_HOSTNAME: https://${KEYCLOAK_DOMAIN:?set KEYCLOAK_DOMAIN}
+      # TLS ends at Caddy; Keycloak trusts its X-Forwarded-* headers.
+      KC_HTTP_ENABLED: "true"
+      KC_PROXY_HEADERS: xforwarded
+      KC_HEALTH_ENABLED: "true"
+      # Only used on the very first start to create the admin account.
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?set KEYCLOAK_ADMIN_PASSWORD}
+      # Read by the ${...} placeholders in realm/accessibility-app.json.
+      APP_URL: ${APP_URL:?set APP_URL}
+      APP_ORIGIN: ${APP_ORIGIN:?set APP_ORIGIN}
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # Plain bash: the Keycloak image has no curl or grep. `$$` escapes compose interpolation.
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && read -r status <&3 && [[ $$status == *' 200 '* ]]"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      KEYCLOAK_DOMAIN: ${KEYCLOAK_DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - keycloak
+
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:

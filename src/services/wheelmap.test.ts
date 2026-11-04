@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import { test } from "node:test";
-import { fetchWheelmapAccessibility, findBestMatch, parseWheelchairStatus } from "./wheelmap.ts";
+import { test } from "vitest";
+import { fetchWheelmapAccessibility, findBestMatch, parseWheelchairStatus } from "./wheelmap";
 
 const venue = { lat: 51.5, lng: -0.1 };
 // ~0.00018° latitude ≈ 20 m

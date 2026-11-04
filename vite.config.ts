@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
@@ -19,5 +20,9 @@ export default defineConfig({
         changeOrigin: true,
       },
     },
+  },
+  test: {
+    // Node by default; component and hook tests opt in with `// @vitest-environment jsdom`.
+    include: ["src/**/*.test.{ts,tsx}", "server/src/**/*.test.ts"],
   },
 });

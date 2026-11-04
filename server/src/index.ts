@@ -2,15 +2,17 @@ import cors from "cors";
 import express, { type NextFunction, type Request, type Response } from "express";
 import { config } from "./config.js";
 import { applySchema, closePool, pool } from "./db.js";
+import { moderationRouter } from "./moderation/routes.js";
 import { reviewsRouter } from "./reviews/routes.js";
 
 const app = express();
 
 app.disable("x-powered-by");
+app.set("trust proxy", config.trustProxy);
 app.use(
   cors({
     origin: config.allowedOrigins,
-    methods: ["GET", "PUT", "DELETE", "OPTIONS"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Authorization", "Content-Type"],
     maxAge: 600,
   }),
@@ -27,6 +29,7 @@ app.get("/api/health", async (_req, res) => {
 });
 
 app.use("/api", reviewsRouter);
+app.use("/api", moderationRouter);
 
 app.use((_req, res) => {
   res.status(404).json({ error: "Not found" });

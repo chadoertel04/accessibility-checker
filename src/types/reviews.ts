@@ -30,17 +30,30 @@ export interface AccessibilityReview {
   updatedAt: string;
   /** True when the signed-in user is the author. */
   ownedByViewer: boolean;
+  /** True when moderation hid it. Only ever true on the viewer's own review. */
+  hidden: boolean;
 }
 
 export interface FeatureReviewSummary {
   featureKey: ReviewFeatureKey;
   likes: number;
   dislikes: number;
-  /** Reviews that include a comment, newest first. */
+  /** Other visitors' notes loaded so far, newest first (the first page, plus any loaded with "Show more"). */
   comments: AccessibilityReview[];
-  /** The signed-in user's review for this category, if any. */
+  /** Number of other visitors' notes across all pages. */
+  commentCount: number;
+  /** Cursor for the next page of notes; null when everything is loaded. */
+  nextCursor: string | null;
+  /** The signed-in user's review for this category, if any (also when hidden). */
   viewerReview: AccessibilityReview | null;
 }
+
+export interface CommentPage {
+  comments: AccessibilityReview[];
+  nextCursor: string | null;
+}
+
+export type ReportReason = "spam" | "offensive" | "inaccurate" | "other";
 
 export interface PlaceReviewSummary {
   googlePlaceId: string;

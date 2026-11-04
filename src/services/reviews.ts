@@ -9,7 +9,9 @@
 
 import type {
   AccessibilityReview,
+  CommentPage,
   PlaceReviewSummary,
+  ReportReason,
   ReviewFeatureKey,
   ReviewSentiment,
 } from "@/types/reviews";
@@ -71,8 +73,8 @@ function reviewPath(googlePlaceId: string, featureKey?: ReviewFeatureKey): strin
 }
 
 /**
- * Fetch every review left for a venue, grouped by accessibility category.
- * Passing a token additionally marks the caller's own reviews.
+ * Fetch vote counts and the first page of notes for a venue, per accessibility category.
+ * Passing a token additionally returns the caller's own reviews.
  */
 export async function fetchPlaceReviews(
   googlePlaceId: string,
@@ -137,4 +139,40 @@ export async function deleteReview(
   });
 
   if (!response.ok && response.status !== 404) await readError(response);
+}
+
+/** Fetch the next page of other visitors' notes for one category. */
+export async function fetchFeatureComments(
+  googlePlaceId: string,
+  featureKey: ReviewFeatureKey,
+  options: { cursor: string; token?: string; signal?: AbortSignal },
+): Promise<CommentPage> {
+  const query = new URLSearchParams({ cursor: options.cursor });
+  const response = await fetch(`${reviewPath(googlePlaceId, featureKey)}/comments?${query}`, {
+    method: "GET",
+    headers: buildHeaders(options.token),
+    signal: options.signal,
+  });
+
+  if (!response.ok) await readError(response);
+
+  return (await response.json()) as CommentPage;
+}
+
+/** Report another visitor's review. Resolves to whether the review is now hidden. */
+export async function reportReview(
+  reviewId: string,
+  input: { reason: ReportReason; details?: string | null },
+  options: { token: string },
+): Promise<{ hidden: boolean }> {
+  const details = input.details?.trim() ?? "";
+  const response = await fetch(`${API_BASE_URL}/reviews/${encodeURIComponent(reviewId)}/reports`, {
+    method: "POST",
+    headers: buildHeaders(options.token, true),
+    body: JSON.stringify({ reason: input.reason, details: details.length > 0 ? details : null }),
+  });
+
+  if (!response.ok) await readError(response);
+
+  return (await response.json()) as { hidden: boolean };
 }

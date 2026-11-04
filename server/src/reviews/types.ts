@@ -38,22 +38,54 @@ export interface AccessibilityReview {
   updatedAt: string;
   /** True when the review belongs to the authenticated caller. */
   ownedByViewer: boolean;
+  /** True when moderation hid it. Only ever true on the caller's own review. */
+  hidden: boolean;
 }
 
-/** Like/dislike tally and comments for one accessibility category. */
+/** Like/dislike tally and the first page of notes for one accessibility category. */
 export interface FeatureReviewSummary {
   featureKey: AccessibilityFeatureKey;
   likes: number;
   dislikes: number;
-  /** Reviews that carry a comment, newest first. */
+  /** First page of other visitors' notes, newest first. */
   comments: AccessibilityReview[];
-  /** The authenticated caller's own review, if any. */
+  /** Number of other visitors' notes across all pages. */
+  commentCount: number;
+  /** Pass to the comments endpoint for the next page; null when there is none. */
+  nextCursor: string | null;
+  /** The authenticated caller's own review, if any (also when hidden). */
   viewerReview: AccessibilityReview | null;
 }
 
-/** Full review payload for a venue. */
+/** Full review payload for a venue. Hidden reviews are not counted. */
 export interface PlaceReviewSummary {
   googlePlaceId: string;
   totalReviews: number;
   features: FeatureReviewSummary[];
+}
+
+/** One page of notes from the comments endpoint. */
+export interface CommentPage {
+  comments: AccessibilityReview[];
+  nextCursor: string | null;
+}
+
+export const REPORT_REASONS = ["spam", "offensive", "inaccurate", "other"] as const;
+
+export type ReportReason = (typeof REPORT_REASONS)[number];
+
+export interface ReportResult {
+  /** True when this report pushed the review over the auto-hide threshold (or it was hidden already). */
+  hidden: boolean;
+}
+
+export const MODERATION_ACTIONS = ["hide", "unhide", "dismiss"] as const;
+
+export type ModerationAction = (typeof MODERATION_ACTIONS)[number];
+
+/** A review with open reports, as listed for moderators. */
+export interface ReportedReview {
+  review: AccessibilityReview & { userId: string; hiddenBy: string | null };
+  openReports: number;
+  reports: { reason: ReportReason; details: string | null; createdAt: string }[];
 }

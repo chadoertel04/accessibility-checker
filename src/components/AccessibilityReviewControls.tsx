@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { REVIEW_COMMENT_MAX_LENGTH } from "@/services/reviews";
 import type {
+  AccessibilityReview,
   FeatureReviewSummary,
+  ReportReason,
   ReviewFeatureKey,
   ReviewSentiment,
 } from "@/types/reviews";
@@ -12,6 +14,9 @@ interface AccessibilityReviewControlsProps {
   summary?: FeatureReviewSummary;
   isAuthenticated: boolean;
   isPending: boolean;
+  isLoadingMore?: boolean;
+  /** Notes the viewer already reported, shown as "Reported". */
+  reportedReviewIds?: ReadonlySet<string>;
   onVote: (
     featureKey: ReviewFeatureKey,
     sentiment: ReviewSentiment,
@@ -19,6 +24,91 @@ interface AccessibilityReviewControlsProps {
   ) => void;
   onRemoveVote: (featureKey: ReviewFeatureKey) => void;
   onRequestSignIn: () => void;
+  onLoadMore: (featureKey: ReviewFeatureKey) => void;
+  onReport: (
+    featureKey: ReviewFeatureKey,
+    reviewId: string,
+    reason: ReportReason,
+    details?: string | null,
+  ) => void;
+}
+
+const REPORT_REASON_LABELS: Record<ReportReason, string> = {
+  spam: "Spam or advertising",
+  offensive: "Offensive or abusive",
+  inaccurate: "Wrong or misleading",
+  other: "Something else",
+};
+
+const linkButton =
+  "text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded";
+
+/** Inline form to report another visitor's note. */
+function ReportForm({
+  review,
+  onSubmit,
+  onCancel,
+}: {
+  review: AccessibilityReview;
+  onSubmit: (reason: ReportReason, details: string) => void;
+  onCancel: () => void;
+}) {
+  const [reason, setReason] = useState<ReportReason>("spam");
+  const [details, setDetails] = useState("");
+  const reasonId = `report-reason-${review.id}`;
+  const detailsId = `report-details-${review.id}`;
+
+  return (
+    <form
+      className="mt-1.5 space-y-1.5 rounded-lg border border-slate-200 dark:border-slate-700 p-2"
+      onSubmit={(event) => {
+        event.preventDefault();
+        onSubmit(reason, details);
+      }}
+    >
+      <label htmlFor={reasonId} className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+        Why are you reporting this note?
+      </label>
+      <select
+        id={reasonId}
+        value={reason}
+        onChange={(event) => setReason(event.target.value as ReportReason)}
+        className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      >
+        {Object.entries(REPORT_REASON_LABELS).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+      <label htmlFor={detailsId} className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+        Details (optional)
+      </label>
+      <input
+        id={detailsId}
+        type="text"
+        value={details}
+        maxLength={500}
+        onChange={(event) => setDetails(event.target.value)}
+        className="w-full rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 px-2 py-1 text-xs text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+      />
+      <div className="flex gap-2">
+        <button
+          type="submit"
+          className="px-2.5 py-1 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium focus:outline-none focus:ring-2 focus:ring-rose-500 focus:ring-offset-1 dark:focus:ring-offset-slate-900"
+        >
+          Send report
+        </button>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="px-2.5 py-1 rounded-md border border-slate-200 dark:border-slate-700 text-xs font-medium text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 focus:outline-none focus:ring-2 focus:ring-slate-400"
+        >
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
 }
 
 const ThumbUpIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -71,14 +161,18 @@ export default function AccessibilityReviewControls({
   summary,
   isAuthenticated,
   isPending,
+  isLoadingMore = false,
+  reportedReviewIds,
   onVote,
   onRemoveVote,
   onRequestSignIn,
+  onLoadMore,
+  onReport,
 }: AccessibilityReviewControlsProps) {
   const viewerReview = summary?.viewerReview ?? null;
   const [isEditingComment, setIsEditingComment] = useState(false);
   const [draftComment, setDraftComment] = useState("");
-  const [showAllComments, setShowAllComments] = useState(false);
+  const [reportingId, setReportingId] = useState<string | null>(null);
 
   useEffect(() => {
     setDraftComment(viewerReview?.comment ?? "");
@@ -86,11 +180,9 @@ export default function AccessibilityReviewControls({
 
   const likes = summary?.likes ?? 0;
   const dislikes = summary?.dislikes ?? 0;
+  // The server already leaves the viewer's own note out of this list.
   const comments = summary?.comments ?? [];
-  const otherComments = comments.filter((review) => !review.ownedByViewer);
-  const visibleComments = showAllComments
-    ? otherComments
-    : otherComments.slice(0, 2);
+  const remainingComments = Math.max(0, (summary?.commentCount ?? 0) - comments.length);
 
   const handleVote = (sentiment: ReviewSentiment) => {
     if (!isAuthenticated) {
@@ -164,7 +256,7 @@ export default function AccessibilityReviewControls({
           <button
             type="button"
             onClick={() => setIsEditingComment(true)}
-            className="ml-auto text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded"
+            className={`ml-auto ${linkButton}`}
           >
             {viewerReview.comment ? "Edit note" : "Add a note"}
           </button>
@@ -236,34 +328,67 @@ export default function AccessibilityReviewControls({
         </p>
       )}
 
-      {otherComments.length > 0 && (
+      {viewerReview?.hidden && (
+        <p role="status" className="mt-2 text-xs text-amber-700 dark:text-amber-400">
+          Your review is hidden from other visitors after reports and is waiting for a moderator.
+        </p>
+      )}
+
+      {comments.length > 0 && (
         <ul className="mt-2 space-y-1.5">
-          {visibleComments.map((review) => (
-            <li
-              key={review.id}
-              className="text-xs text-slate-600 dark:text-slate-300"
-            >
-              <span className="font-medium text-slate-700 dark:text-slate-200">
-                {review.authorName ?? "Visitor"}
-              </span>
-              <span className="text-slate-400 dark:text-slate-500">
-                {" "}
-                · {review.sentiment === "like" ? "Yes" : "No"} ·{" "}
-                {formatDate(review.updatedAt)}
-              </span>
-              <span className="block">{review.comment}</span>
-            </li>
-          ))}
-          {otherComments.length > 2 && (
+          {comments.map((review) => {
+            const isReported = reportedReviewIds?.has(review.id) ?? false;
+            return (
+              <li
+                key={review.id}
+                className="text-xs text-slate-600 dark:text-slate-300"
+              >
+                <span className="font-medium text-slate-700 dark:text-slate-200">
+                  {review.authorName ?? "Visitor"}
+                </span>
+                <span className="text-slate-400 dark:text-slate-500">
+                  {" "}
+                  · {review.sentiment === "like" ? "Yes" : "No"} ·{" "}
+                  {formatDate(review.updatedAt)}
+                </span>
+                <span className="block">{review.comment}</span>
+                {isReported ? (
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    Reported, thank you
+                  </span>
+                ) : reportingId === review.id ? (
+                  <ReportForm
+                    review={review}
+                    onCancel={() => setReportingId(null)}
+                    onSubmit={(reason, details) => {
+                      setReportingId(null);
+                      onReport(featureKey, review.id, reason, details);
+                    }}
+                  />
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => (isAuthenticated ? setReportingId(review.id) : onRequestSignIn())}
+                    aria-label={`Report note by ${review.authorName ?? "Visitor"}`}
+                    className="text-[11px] text-slate-400 dark:text-slate-500 hover:text-rose-600 dark:hover:text-rose-400 hover:underline focus:outline-none focus:ring-2 focus:ring-rose-500 rounded"
+                  >
+                    Report
+                  </button>
+                )}
+              </li>
+            );
+          })}
+          {summary?.nextCursor && (
             <li>
               <button
                 type="button"
-                onClick={() => setShowAllComments((value) => !value)}
-                className="text-xs font-medium text-indigo-600 dark:text-indigo-400 hover:underline focus:outline-none focus:ring-2 focus:ring-indigo-500 rounded"
+                onClick={() => onLoadMore(featureKey)}
+                disabled={isLoadingMore}
+                className={`${linkButton} disabled:opacity-60`}
               >
-                {showAllComments
-                  ? "Show fewer notes"
-                  : `Show ${otherComments.length - 2} more note${otherComments.length - 2 === 1 ? "" : "s"}`}
+                {isLoadingMore
+                  ? "Loading notes…"
+                  : `Show more notes${remainingComments > 0 ? ` (${remainingComments} left)` : ""}`}
               </button>
             </li>
           )}

@@ -6,6 +6,8 @@ export interface AuthenticatedUser {
   /** Keycloak subject claim. */
   id: string;
   name: string | null;
+  /** Keycloak realm roles, e.g. "moderator". */
+  roles: string[];
 }
 
 declare global {
@@ -39,7 +41,26 @@ async function verifyToken(token: string): Promise<AuthenticatedUser> {
   // Shown publicly next to comments, so never use preferred_username: it is often an email.
   const name = typeof payload.given_name === "string" ? payload.given_name : null;
 
-  return { id: payload.sub, name };
+  return { id: payload.sub, name, roles: readRealmRoles(payload) };
+}
+
+/** Realm roles from a Keycloak token's `realm_access.roles`; anything malformed means no roles. */
+export function readRealmRoles(payload: Record<string, unknown>): string[] {
+  const access = payload.realm_access;
+  if (!access || typeof access !== "object") return [];
+  const roles = (access as { roles?: unknown }).roles;
+  return Array.isArray(roles) ? roles.filter((role): role is string => typeof role === "string") : [];
+}
+
+/** Rejects with 403 unless the signed-in user has `role`. Use after requireAuth. */
+export function requireRole(role: string) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user?.roles.includes(role)) {
+      res.status(403).json({ error: "You do not have permission to do this" });
+      return;
+    }
+    next();
+  };
 }
 
 /** Populates `req.user` when a valid token is present; never rejects. */

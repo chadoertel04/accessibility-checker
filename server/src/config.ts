@@ -20,11 +20,20 @@ function buildDatabaseUrl(): string {
   return `postgres://${user}:${password}@${host}:${port}/${database}`;
 }
 
+/** Express "trust proxy": a hop count ("1" behind Caddy), "true", or off by default. */
+function readTrustProxy(): number | boolean {
+  const value = readEnv("API_TRUST_PROXY", "false");
+  if (/^\d+$/.test(value)) return Number(value);
+  return value === "true";
+}
+
 const keycloakUrl = readEnv("KEYCLOAK_URL", "http://localhost:8080").replace(/\/+$/, "");
 const keycloakRealm = readEnv("KEYCLOAK_REALM", "accessibility-app");
 
 export const config = {
   port: Number.parseInt(readEnv("API_PORT", "3001"), 10),
+  // Behind a reverse proxy this makes req.ip the client, which the rate limits key on.
+  trustProxy: readTrustProxy(),
   databaseUrl: buildDatabaseUrl(),
   allowedOrigins: readEnv("API_ALLOWED_ORIGINS", "http://localhost:5173")
     .split(",")

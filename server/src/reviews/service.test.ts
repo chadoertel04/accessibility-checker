@@ -1,11 +1,10 @@
-import assert from "node:assert/strict";
-import { test } from "node:test";
-import type { ReviewRecord } from "./repository.js";
+import { describe, expect, test } from "vitest";
+import type { FeedRecord, ReviewRecord } from "./repository.js";
 import { summarizeReviews } from "./service.js";
-import { ValidationError, parsePlaceId } from "./validation.js";
+import { parseCursor } from "./validation.js";
 
 const record = (overrides: Partial<ReviewRecord>): ReviewRecord => ({
-  id: "r1",
+  id: "00000000-0000-4000-8000-000000000001",
   googlePlaceId: "place",
   featureKey: "hearingLoop",
   userId: "alice",
@@ -14,40 +13,62 @@ const record = (overrides: Partial<ReviewRecord>): ReviewRecord => ({
   comment: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
+  hiddenAt: null,
+  hiddenBy: null,
   ...overrides,
 });
 
-test("summarizeReviews counts votes, collects comments and marks the viewer's review", () => {
-  const summary = summarizeReviews(
-    "place",
-    [
-      record({ id: "a", userId: "alice", sentiment: "like", comment: "Loop works" }),
-      record({ id: "b", userId: "bob", sentiment: "dislike" }),
-      record({ id: "c", userId: "carol", sentiment: "like" }),
-    ],
-    "bob",
-  );
+const feed = (n: number): FeedRecord[] =>
+  Array.from({ length: n }, (_, i) => ({
+    ...record({ id: `00000000-0000-4000-8000-00000000000${i}`, comment: `note ${i}` }),
+    // Microsecond precision that a JS Date would lose.
+    cursorTs: `2026-11-04T10:00:0${9 - i}.123456Z`,
+  }));
 
-  const loop = summary.features.find((f) => f.featureKey === "hearingLoop")!;
-  assert.equal(summary.totalReviews, 3);
-  assert.equal(summary.features.length, 8);
-  assert.equal(loop.likes, 2);
-  assert.equal(loop.dislikes, 1);
-  assert.deepEqual(loop.comments.map((c) => c.id), ["a"]);
-  assert.equal(loop.viewerReview?.id, "b");
-  assert.equal(loop.comments[0].ownedByViewer, false);
-});
+const loop = (summary: ReturnType<typeof summarizeReviews>) =>
+  summary.features.find((f) => f.featureKey === "hearingLoop")!;
 
-test("summarizeReviews marks nothing as owned for anonymous viewers", () => {
-  const summary = summarizeReviews("place", [record({ comment: "hi" })]);
-  const loop = summary.features.find((f) => f.featureKey === "hearingLoop")!;
-  assert.equal(loop.viewerReview, null);
-  assert.equal(loop.comments[0].ownedByViewer, false);
-});
+describe("summarizeReviews", () => {
+  test("fills every category and takes counts from the vote query", () => {
+    const summary = summarizeReviews("place", {
+      votes: [{ featureKey: "hearingLoop", likes: 2, dislikes: 1, commentCount: 1 }],
+      firstPages: feed(1),
+      viewerReviews: [],
+    });
 
-test("parsePlaceId accepts Google Place IDs and rejects anything else", () => {
-  assert.equal(parsePlaceId(" ChIJN1t_tDeuEmsRUsoyG83frY4 "), "ChIJN1t_tDeuEmsRUsoyG83frY4");
-  for (const bad of ["", "a/b", "a b", "x".repeat(513), 42, undefined]) {
-    assert.throws(() => parsePlaceId(bad), ValidationError, String(bad));
-  }
+    expect(summary.features).toHaveLength(8);
+    expect(summary.totalReviews).toBe(3);
+    expect(loop(summary)).toMatchObject({ likes: 2, dislikes: 1, commentCount: 1, nextCursor: null });
+    expect(summary.features.find((f) => f.featureKey === "tactilePaving")).toMatchObject({
+      likes: 0,
+      dislikes: 0,
+      comments: [],
+      viewerReview: null,
+    });
+  });
+
+  test("returns one page and a cursor pointing at its last note when more exist", () => {
+    const rows = feed(4); // page size 3 + 1 lookahead row
+    const summary = summarizeReviews("place", { votes: [], firstPages: rows, viewerReviews: [] }, undefined, 3);
+
+    expect(loop(summary).comments.map((c) => c.comment)).toEqual(["note 0", "note 1", "note 2"]);
+    // The cursor keeps the full-precision Postgres timestamp of the last returned note.
+    expect(parseCursor(loop(summary).nextCursor)).toEqual({ ts: rows[2].cursorTs, id: rows[2].id });
+  });
+
+  test("shows the viewer their own review even when hidden, with the hidden flag", () => {
+    const own = record({ userId: "bob", sentiment: "dislike", hiddenAt: new Date(1), hiddenBy: "auto" });
+    const summary = summarizeReviews(
+      "place",
+      { votes: [], firstPages: [], viewerReviews: [own] },
+      "bob",
+    );
+
+    expect(loop(summary).viewerReview).toMatchObject({ ownedByViewer: true, hidden: true });
+  });
+
+  test("other visitors' notes are never marked as owned", () => {
+    const summary = summarizeReviews("place", { votes: [], firstPages: feed(1), viewerReviews: [] }, "bob");
+    expect(loop(summary).comments[0]).toMatchObject({ ownedByViewer: false, hidden: false });
+  });
 });

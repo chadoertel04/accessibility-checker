@@ -261,9 +261,13 @@ export default function AccessibilitySection({
             summary={featureSummary}
             isAuthenticated={reviews.isAuthenticated}
             isPending={reviews.pendingFeature === feature.key}
+            isLoadingMore={reviews.loadingMoreFeature === feature.key}
+            reportedReviewIds={reviews.reportedReviewIds}
             onVote={(key, sentiment, comment) => void reviews.vote(key, sentiment, comment)}
             onRemoveVote={(key) => void reviews.removeVote(key)}
             onRequestSignIn={reviews.requestSignIn}
+            onLoadMore={(key) => void reviews.loadMoreComments(key)}
+            onReport={(key, id, reason, details) => void reviews.report(key, id, reason, details)}
           />
         )}
       </AccessibilityFeatureCard>

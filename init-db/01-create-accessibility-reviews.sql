@@ -57,13 +57,52 @@ CREATE TABLE IF NOT EXISTS accessibility_reviews (
         UNIQUE (google_place_id, feature_key, user_id)
 );
 
--- The unique constraint's index (google_place_id, feature_key, user_id) also
--- serves lookups by place and by place + feature, so no extra indexes.
+-- Moderation: hidden reviews are left out of public counts and notes.
+-- hidden_by is a moderator's Keycloak subject, or 'auto' after too many reports.
+ALTER TABLE accessibility_reviews
+    ADD COLUMN IF NOT EXISTS hidden_at timestamptz,
+    ADD COLUMN IF NOT EXISTS hidden_by text;
 
+-- The unique constraint's index (google_place_id, feature_key, user_id) serves
+-- lookups by place and by place + feature. This one serves the newest-first
+-- note feed, which pages on (updated_at, id).
+CREATE INDEX IF NOT EXISTS accessibility_reviews_feed_idx
+    ON accessibility_reviews (google_place_id, feature_key, updated_at DESC, id DESC)
+    WHERE comment IS NOT NULL AND hidden_at IS NULL;
+
+DO $$
+BEGIN
+    CREATE TYPE review_report_reason AS ENUM ('spam', 'offensive', 'inaccurate', 'other');
+EXCEPTION
+    WHEN duplicate_object THEN NULL;
+END
+$$;
+
+-- Visitor reports against a review. Open reports have resolved_at IS NULL.
+CREATE TABLE IF NOT EXISTS review_reports (
+    id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    review_id uuid NOT NULL REFERENCES accessibility_reviews (id) ON DELETE CASCADE,
+    reporter_id text NOT NULL CHECK (char_length(reporter_id) BETWEEN 1 AND 255),
+    reason review_report_reason NOT NULL,
+    details text CHECK (details IS NULL OR char_length(details) <= 500),
+    created_at timestamptz NOT NULL DEFAULT now(),
+    resolved_at timestamptz,
+    -- One report per visitor per review.
+    CONSTRAINT review_reports_one_per_reporter UNIQUE (review_id, reporter_id)
+);
+
+CREATE INDEX IF NOT EXISTS review_reports_open_idx
+    ON review_reports (review_id) WHERE resolved_at IS NULL;
+
+-- Only content changes count as an update: hiding or unhiding a review must not
+-- move it to the top of the newest-first feed or change its shown date.
 CREATE OR REPLACE FUNCTION accessibility_reviews_set_updated_at()
 RETURNS trigger AS $$
 BEGIN
-    NEW.updated_at := now();
+    IF (NEW.sentiment, NEW.comment, NEW.author_name)
+        IS DISTINCT FROM (OLD.sentiment, OLD.comment, OLD.author_name) THEN
+        NEW.updated_at := now();
+    END IF;
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

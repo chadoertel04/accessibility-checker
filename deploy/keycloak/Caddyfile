@@ -1,0 +1,4 @@
+{$KEYCLOAK_DOMAIN} {
+	encode gzip
+	reverse_proxy keycloak:8080
+}

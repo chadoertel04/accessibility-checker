@@ -180,6 +180,8 @@ export default function GoogleMap({
   const mapInstanceRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
   const placesServiceRef = useRef<google.maps.places.PlacesService | null>(null);
+  // Last place the user picked; slower lookups for earlier picks are dropped.
+  const latestPlaceIdRef = useRef<string | null>(null);
 
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +230,7 @@ export default function GoogleMap({
         placesServiceRef.current = new google.maps.places.PlacesService(map);
       }
 
+      latestPlaceIdRef.current = placeId;
       onLoadingChange?.(true);
 
       placesServiceRef.current.getDetails(
@@ -236,6 +239,7 @@ export default function GoogleMap({
           fields: PLACE_DETAILS_FIELDS,
         },
         async (place, status) => {
+          if (latestPlaceIdRef.current !== placeId) return;
           if (status === google.maps.places.PlacesServiceStatus.OK && place) {
             const venueData = extractVenueData(place);
             if (venueData) {
@@ -269,6 +273,7 @@ export default function GoogleMap({
                 );
               }
 
+              if (latestPlaceIdRef.current !== placeId) return;
               onLoadingChange?.(false);
               onVenueSelect?.(venueData);
             } else {

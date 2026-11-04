@@ -278,7 +278,7 @@ export default function VenueDetailsPanel({
 }: VenueDetailsPanelProps) {
   const panelRef = useRef<HTMLDivElement>(null);
 
-  // Focus trap and keyboard handling
+  // Escape closes the panel
   useEffect(() => {
     if (!venue && !isLoading) return;
 
@@ -314,8 +314,8 @@ export default function VenueDetailsPanel({
       <aside
         ref={panelRef}
         tabIndex={-1}
-        role="dialog"
-        aria-modal="true"
+        // Not aria-modal: there is no focus trap and the map stays usable beside it on desktop.
+        role="complementary"
         aria-label={venue?.name ?? "Venue details"}
         className="fixed inset-x-0 bottom-0 z-40 max-h-[85vh] lg:inset-y-0 lg:left-auto lg:right-0 lg:w-[420px] lg:max-h-none bg-slate-50 dark:bg-slate-950 rounded-t-2xl lg:rounded-none shadow-2xl overflow-hidden flex flex-col"
       >
